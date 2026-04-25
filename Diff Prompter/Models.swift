@@ -78,6 +78,19 @@ struct DiffFile: Identifiable {
     var allLines: [DiffLine] {
         hunks.flatMap(\.lines)
     }
+
+    /// A hash of the diff content, used to detect changes between refreshes.
+    var diffContentHash: Int {
+        var hasher = Hasher()
+        for hunk in hunks {
+            hasher.combine(hunk.header)
+            for line in hunk.lines {
+                hasher.combine(line.type)
+                hasher.combine(line.content)
+            }
+        }
+        return hasher.finalize()
+    }
 }
 
 struct Worktree: Identifiable, Hashable {

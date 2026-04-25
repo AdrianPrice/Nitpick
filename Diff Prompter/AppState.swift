@@ -20,7 +20,7 @@ final class AppState {
     var previewPromptText = ""
     var fileFilter: String = ""
     var diffViewMode: DiffViewMode = .unified
-    var reviewedFileIds: Set<String> = []
+    var reviewedFileHashes: [String: Int] = [:]  // fileId -> diff content hash at review time
 
     // Computed
     var filteredFiles: [DiffFile] {
@@ -29,8 +29,8 @@ final class AppState {
             : diffFiles.filter { $0.path.localizedCaseInsensitiveContains(fileFilter) }
         // Sort reviewed files to the bottom
         return filtered.sorted { lhs, rhs in
-            let lReviewed = reviewedFileIds.contains(lhs.id)
-            let rReviewed = reviewedFileIds.contains(rhs.id)
+            let lReviewed = reviewedFileHashes[lhs.id] != nil
+            let rReviewed = reviewedFileHashes[rhs.id] != nil
             if lReviewed != rReviewed { return !lReviewed }
             return false // preserve existing order within each group
         }
@@ -116,6 +116,17 @@ final class AppState {
             }
 
             self.diffFiles = files.sorted { $0.path < $1.path }
+
+            // Unmark reviewed files whose diff content has changed
+            for file in self.diffFiles {
+                if let savedHash = reviewedFileHashes[file.id],
+                   savedHash != file.diffContentHash {
+                    reviewedFileHashes.removeValue(forKey: file.id)
+                }
+            }
+            // Also remove reviewed entries for files no longer in the diff
+            let currentIds = Set(self.diffFiles.map(\.id))
+            reviewedFileHashes = reviewedFileHashes.filter { currentIds.contains($0.key) }
 
             // Remap comments to new file/line UUIDs so they survive refresh
             remapCommentsToNewDiff()
@@ -214,15 +225,15 @@ final class AppState {
     }
 
     func toggleReviewed(_ fileId: String) {
-        if reviewedFileIds.contains(fileId) {
-            reviewedFileIds.remove(fileId)
-        } else {
-            reviewedFileIds.insert(fileId)
+        if reviewedFileHashes[fileId] != nil {
+            reviewedFileHashes.removeValue(forKey: fileId)
+        } else if let file = diffFiles.first(where: { $0.id == fileId }) {
+            reviewedFileHashes[fileId] = file.diffContentHash
         }
     }
 
     func isReviewed(_ fileId: String) -> Bool {
-        reviewedFileIds.contains(fileId)
+        reviewedFileHashes[fileId] != nil
     }
 
     // Navigate to next/previous comment

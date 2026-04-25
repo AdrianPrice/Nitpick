@@ -20,11 +20,20 @@ final class AppState {
     var previewPromptText = ""
     var fileFilter: String = ""
     var diffViewMode: DiffViewMode = .unified
+    var reviewedFileIds: Set<String> = []
 
     // Computed
     var filteredFiles: [DiffFile] {
-        if fileFilter.isEmpty { return diffFiles }
-        return diffFiles.filter { $0.path.localizedCaseInsensitiveContains(fileFilter) }
+        let filtered = fileFilter.isEmpty
+            ? diffFiles
+            : diffFiles.filter { $0.path.localizedCaseInsensitiveContains(fileFilter) }
+        // Sort reviewed files to the bottom
+        return filtered.sorted { lhs, rhs in
+            let lReviewed = reviewedFileIds.contains(lhs.id)
+            let rReviewed = reviewedFileIds.contains(rhs.id)
+            if lReviewed != rReviewed { return !lReviewed }
+            return false // preserve existing order within each group
+        }
     }
 
     var commentCount: Int { comments.count }
@@ -202,6 +211,18 @@ final class AppState {
 
     func clearComments() {
         comments.removeAll()
+    }
+
+    func toggleReviewed(_ fileId: String) {
+        if reviewedFileIds.contains(fileId) {
+            reviewedFileIds.remove(fileId)
+        } else {
+            reviewedFileIds.insert(fileId)
+        }
+    }
+
+    func isReviewed(_ fileId: String) -> Bool {
+        reviewedFileIds.contains(fileId)
     }
 
     // Navigate to next/previous comment

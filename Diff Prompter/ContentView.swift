@@ -109,33 +109,55 @@ struct ContentView: View {
     // MARK: - File Header
 
     private func fileHeaderBar(_ file: DiffFile) -> some View {
-        HStack {
-            Image(systemName: file.status.symbol)
-                .foregroundStyle(statusColor(file.status))
+        VStack(spacing: 0) {
+            HStack {
+                Image(systemName: file.status.symbol)
+                    .foregroundStyle(statusColor(file.status))
 
-            Text(file.path)
-                .font(.system(.body, design: .monospaced))
-                .lineLimit(1)
+                Text(file.path)
+                    .font(.system(.body, design: .monospaced))
+                    .lineLimit(1)
 
-            Spacer()
+                Spacer()
 
-            let count = state.fileCommentCount(file.id)
-            if count > 0 {
-                Label("\(count) comment\(count == 1 ? "" : "s")", systemImage: "bubble.left")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Picker("View", selection: $state.diffViewMode) {
-                ForEach(DiffViewMode.allCases, id: \.self) { mode in
-                    Text(mode.rawValue).tag(mode)
+                Picker("View", selection: $state.diffViewMode) {
+                    ForEach(DiffViewMode.allCases, id: \.self) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
                 }
+                .pickerStyle(.segmented)
+                .frame(width: 180)
             }
-            .pickerStyle(.segmented)
-            .frame(width: 180)
+            .padding(.horizontal, 12)
+            .padding(.top, 6)
+            .padding(.bottom, 4)
+
+            HStack {
+                let count = state.fileCommentCount(file.id)
+                if count > 0 {
+                    Label("\(count) comment\(count == 1 ? "" : "s")", systemImage: "bubble.left")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                let reviewed = state.isReviewed(file.id)
+                Button {
+                    state.toggleReviewed(file.id)
+                } label: {
+                    Label(
+                        reviewed ? "Reviewed" : "Mark Reviewed",
+                        systemImage: reviewed ? "checkmark.circle.fill" : "checkmark.circle"
+                    )
+                }
+                .buttonStyle(.bordered)
+                .tint(reviewed ? .green : nil)
+                .controlSize(.small)
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 6)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
     }
 
     // MARK: - Comment Action Bar

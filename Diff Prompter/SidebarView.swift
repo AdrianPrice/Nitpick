@@ -74,7 +74,7 @@ struct SidebarView: View {
             }
         )) {
             ForEach(tree.children) { node in
-                FileTreeRow(node: node)
+                FileTreeRow(node: node, state: state)
             }
         }
         .listStyle(.sidebar)
@@ -100,14 +100,6 @@ struct FileTreeNode: Identifiable {
     var children: [FileTreeNode]
 
     var isFolder: Bool { file == nil }
-
-    /// Total comment count for this node and all descendants
-    var totalCommentCount: Int {
-        if let _ = file {
-            return commentCount
-        }
-        return children.reduce(0) { $0 + $1.totalCommentCount }
-    }
 
     /// Builds a tree from a flat list of DiffFiles, collapsing single-child folders.
     static func buildTree(
@@ -208,20 +200,27 @@ struct FileTreeNode: Identifiable {
 
 struct FileTreeRow: View {
     let node: FileTreeNode
+    let state: AppState
     @State private var isExpanded = true
 
     var body: some View {
         if node.isFolder {
             DisclosureGroup(isExpanded: $isExpanded) {
                 ForEach(node.children) { child in
-                    FileTreeRow(node: child)
+                    FileTreeRow(node: child, state: state)
                 }
             } label: {
                 folderLabel
             }
         } else if let file = node.file {
-            FileRow(file: file, fileName: node.name, commentCount: node.commentCount)
+            let reviewed = state.isReviewed(file.id)
+            FileRow(file: file, fileName: node.name, commentCount: node.commentCount, isReviewed: reviewed)
                 .tag(file.id)
+                .contextMenu {
+                    Button(reviewed ? "Mark as Unreviewed" : "Mark as Reviewed") {
+                        state.toggleReviewed(file.id)
+                    }
+                }
         }
     }
 
@@ -236,18 +235,6 @@ struct FileTreeRow: View {
                 .truncationMode(.tail)
                 .font(.system(.body, design: .monospaced))
                 .foregroundStyle(.secondary)
-
-            Spacer()
-
-            let total = node.totalCommentCount
-            if total > 0 {
-                Text("\(total)")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
-                    .background(.blue, in: Capsule())
-            }
         }
     }
 }
@@ -258,12 +245,19 @@ struct FileRow: View {
     let file: DiffFile
     let fileName: String
     let commentCount: Int
+    let isReviewed: Bool
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: file.status.symbol)
-                .foregroundStyle(statusColor)
-                .font(.system(size: 12))
+            if isReviewed {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                    .font(.system(size: 12))
+            } else {
+                Image(systemName: file.status.symbol)
+                    .foregroundStyle(statusColor)
+                    .font(.system(size: 12))
+            }
 
             Text(fileName)
                 .lineLimit(1)
@@ -281,6 +275,7 @@ struct FileRow: View {
             }
         }
         .padding(.vertical, 2)
+        .opacity(isReviewed ? 0.5 : 1.0)
     }
 
     private var statusColor: Color {

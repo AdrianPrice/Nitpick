@@ -63,10 +63,17 @@ struct DiffHunk: Identifiable {
 }
 
 struct DiffFile: Identifiable {
-    let id = UUID()
+    let id: String  // stable ID based on file path
     let path: String
     let status: FileStatus
     var hunks: [DiffHunk]
+
+    init(path: String, status: FileStatus, hunks: [DiffHunk]) {
+        self.id = path
+        self.path = path
+        self.status = status
+        self.hunks = hunks
+    }
 
     var allLines: [DiffLine] {
         hunks.flatMap(\.lines)
@@ -108,7 +115,7 @@ struct Repository {
 
 struct LineComment: Identifiable {
     let id: UUID
-    let fileId: UUID
+    let fileId: String
     let lineIds: Set<UUID>        // all lines this comment covers
     let filePath: String
     let startLineNumber: Int?
@@ -120,7 +127,7 @@ struct LineComment: Identifiable {
 
     init(
         id: UUID = UUID(),
-        fileId: UUID,
+        fileId: String,
         lineIds: Set<UUID>,
         filePath: String,
         startLineNumber: Int?,

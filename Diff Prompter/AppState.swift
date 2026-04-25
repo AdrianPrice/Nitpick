@@ -11,6 +11,7 @@ final class AppState {
     var selectedWorktree: Worktree?
     var diffFiles: [DiffFile] = []
     var selectedFile: DiffFile?
+    var selectedFileId: String?
     var comments: [LineComment] = []
     var isLoading = false
     var errorMessage: String?
@@ -32,7 +33,7 @@ final class AppState {
         Set(comments.map(\.filePath)).count
     }
 
-    func commentsForFile(_ fileId: UUID) -> [LineComment] {
+    func commentsForFile(_ fileId: String) -> [LineComment] {
         comments.filter { $0.fileId == fileId }
     }
 
@@ -40,7 +41,7 @@ final class AppState {
         comments.first { $0.lineIds.contains(lineId) }
     }
 
-    func fileCommentCount(_ fileId: UUID) -> Int {
+    func fileCommentCount(_ fileId: String) -> Int {
         comments.filter { $0.fileId == fileId }.count
     }
 
@@ -71,7 +72,7 @@ final class AppState {
 
     func selectWorktree(_ worktree: Worktree) {
         selectedWorktree = worktree
-        selectedFile = nil
+        selectFile(nil)
         Task { await refreshDiff() }
     }
 
@@ -110,12 +111,12 @@ final class AppState {
             // Remap comments to new file/line UUIDs so they survive refresh
             remapCommentsToNewDiff()
 
-            // If previously selected file is still present, keep it
-            if let selected = selectedFile,
-               let updated = diffFiles.first(where: { $0.path == selected.path }) {
+            // Update selectedFile to the new instance (ID is stable, based on path)
+            if let currentId = selectedFileId,
+               let updated = diffFiles.first(where: { $0.id == currentId }) {
                 selectedFile = updated
             } else {
-                selectedFile = diffFiles.first
+                selectFile(diffFiles.first)
             }
 
             errorMessage = nil
@@ -211,9 +212,9 @@ final class AppState {
            let idx = comments.firstIndex(where: { $0.id == currentComment.id }),
            idx + 1 < comments.count {
             let next = comments[idx + 1]
-            selectedFile = diffFiles.first { $0.id == next.fileId }
+            selectFile(diffFiles.first { $0.id == next.fileId })
         } else if let first = comments.first {
-            selectedFile = diffFiles.first { $0.id == first.fileId }
+            selectFile(diffFiles.first { $0.id == first.fileId })
         }
     }
 
@@ -224,8 +225,14 @@ final class AppState {
            let idx = comments.firstIndex(where: { $0.id == currentComment.id }),
            idx > 0 {
             let prev = comments[idx - 1]
-            selectedFile = diffFiles.first { $0.id == prev.fileId }
+            selectFile(diffFiles.first { $0.id == prev.fileId })
         }
+    }
+
+    /// Central selection method — keeps selectedFile and selectedFileId in sync.
+    func selectFile(_ file: DiffFile?) {
+        selectedFile = file
+        selectedFileId = file?.id
     }
 
     // MARK: - Helpers

@@ -81,16 +81,13 @@ final class AppState {
         defer { isLoading = false }
 
         do {
-            // Get diff and status in parallel
-            async let diffOutput = gitService.diff(worktreePath: worktree.path)
-            async let statusOutput = gitService.status(worktreePath: worktree.path)
+            // Get diff and status from libgit2
+            let diffFiles = try await gitService.diff(worktreePath: worktree.path)
+            let statuses = try await gitService.status(worktreePath: worktree.path)
 
-            let diff = try await diffOutput
-            let statuses = try await statusOutput
+            var files = diffFiles
 
-            var files = DiffParser.parse(diff)
-
-            // Update file statuses from git status
+            // Update file statuses from status output (status may have more detail)
             let statusMap = Dictionary(statuses, uniquingKeysWith: { first, _ in first })
             for i in files.indices {
                 if let status = statusMap[files[i].path] {
@@ -102,13 +99,13 @@ final class AppState {
                 }
             }
 
-            // Add untracked files that aren't in the diff
+            // Add files from status that aren't in the diff (e.g. untracked)
             let diffPaths = Set(files.map(\.path))
             for (path, status) in statuses where !diffPaths.contains(path) {
                 files.append(DiffFile(path: path, status: status, hunks: []))
             }
 
-            diffFiles = files.sorted { $0.path < $1.path }
+            self.diffFiles = files.sorted { $0.path < $1.path }
 
             // Remap comments to new file/line UUIDs so they survive refresh
             remapCommentsToNewDiff()

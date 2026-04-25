@@ -1,184 +1,236 @@
 import Foundation
+import SwiftGitX
 
-// MARK: - Git Service
+// MARK: - Git Service (libgit2-based via SwiftGitX)
+
+/// Type alias to avoid collision between our model's Repository and SwiftGitX's Repository
+private typealias GitRepo = SwiftGitX.Repository
 
 actor GitService {
     enum GitError: Error, LocalizedError {
         case notAGitRepository
         case commandFailed(String)
-        case gitNotFound
 
         var errorDescription: String? {
             switch self {
             case .notAGitRepository: return "Not a git repository"
-            case .commandFailed(let msg): return "Git command failed: \(msg)"
-            case .gitNotFound: return "git is not installed. Please install Xcode Command Line Tools by running: xcode-select --install"
+            case .commandFailed(let msg): return "Git error: \(msg)"
             }
         }
-    }
-
-    /// Check whether git is available on this system.
-    func checkGitAvailable() async -> Bool {
-        do {
-            _ = try await run(["--version"])
-            return true
-        } catch {
-            return false
-        }
-    }
-
-    private func run(_ arguments: [String], workingDirectory: String? = nil) async throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["git"] + arguments
-        if let dir = workingDirectory {
-            process.currentDirectoryURL = URL(fileURLWithPath: dir)
-        }
-
-        let stdout = Pipe()
-        let stderr = Pipe()
-        process.standardOutput = stdout
-        process.standardError = stderr
-
-        do {
-            try process.run()
-        } catch {
-            throw GitError.gitNotFound
-        }
-
-        // Wait for termination without blocking the cooperative thread pool
-        await withCheckedContinuation { continuation in
-            process.terminationHandler = { _ in
-                continuation.resume()
-            }
-        }
-
-        let outData = stdout.fileHandleForReading.readDataToEndOfFile()
-        let errData = stderr.fileHandleForReading.readDataToEndOfFile()
-
-        if process.terminationStatus != 0 {
-            let errString = String(data: errData, encoding: .utf8) ?? "Unknown error"
-            if !errString.isEmpty {
-                throw GitError.commandFailed(errString.trimmingCharacters(in: .whitespacesAndNewlines))
-            }
-        }
-
-        return String(data: outData, encoding: .utf8) ?? ""
     }
 
     // MARK: - Public API
 
-    func isGitRepository(at path: String) async -> Bool {
+    func isGitRepository(at path: String) -> Bool {
+        let url = URL(fileURLWithPath: path)
         do {
-            _ = try await run(["rev-parse", "--git-dir"], workingDirectory: path)
+            _ = try GitRepo.open(at: url)
             return true
         } catch {
             return false
         }
     }
 
-    func listWorktrees(repoPath: String) async throws -> [Worktree] {
-        let output = try await run(["worktree", "list", "--porcelain"], workingDirectory: repoPath)
-        return parseWorktreeList(output)
-    }
+    func listWorktrees(repoPath: String) throws -> [Worktree] {
+        let url = URL(fileURLWithPath: repoPath)
+        let repo = try openRepo(at: url)
 
-    func currentBranch(worktreePath: String) async throws -> String {
-        let output = try await run(["branch", "--show-current"], workingDirectory: worktreePath)
-        return output.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    func diff(worktreePath: String) async throws -> String {
-        return try await run(["diff", "HEAD"], workingDirectory: worktreePath)
-    }
-
-    func status(worktreePath: String) async throws -> [(String, FileStatus)] {
-        let output = try await run(["status", "--porcelain"], workingDirectory: worktreePath)
-        return parseStatus(output)
-    }
-
-    func untrackedFiles(worktreePath: String) async throws -> String {
-        // Get diff of untracked files by adding them to diff with --no-index /dev/null
-        // Actually, we handle untracked via status already. For diff content of untracked,
-        // we'd need to read the file. For v1, we'll just show them in the file list.
-        return ""
-    }
-
-    // MARK: - Parsing
-
-    private func parseWorktreeList(_ output: String) -> [Worktree] {
         var worktrees: [Worktree] = []
-        var currentPath: String?
-        var currentBranch: String = ""
-        var isBareBranch = false
 
-        for line in output.components(separatedBy: "\n") {
-            if line.hasPrefix("worktree ") {
-                if let path = currentPath {
-                    worktrees.append(Worktree(
-                        path: path,
-                        branch: currentBranch,
-                        isMain: worktrees.isEmpty
-                    ))
+        // The main worktree
+        let mainBranch = branchName(for: repo)
+        worktrees.append(Worktree(path: repoPath, branch: mainBranch, isMain: true))
+
+        // Discover linked worktrees from .git/worktrees/
+        let gitDir = url.appendingPathComponent(".git")
+        let worktreesDir = gitDir.appendingPathComponent("worktrees")
+        let fm = FileManager.default
+
+        if fm.fileExists(atPath: worktreesDir.path) {
+            let entries = (try? fm.contentsOfDirectory(atPath: worktreesDir.path)) ?? []
+            for entry in entries {
+                let entryDir = worktreesDir.appendingPathComponent(entry)
+                let gitdirFile = entryDir.appendingPathComponent("gitdir")
+                guard let gitdirContent = try? String(contentsOf: gitdirFile, encoding: .utf8) else { continue }
+
+                let linkedPath = gitdirContent.trimmingCharacters(in: .whitespacesAndNewlines)
+                let worktreePath = URL(fileURLWithPath: linkedPath).deletingLastPathComponent().path
+
+                guard fm.fileExists(atPath: worktreePath) else { continue }
+
+                // Get branch from HEAD file
+                var branch = entry
+                let headFile = entryDir.appendingPathComponent("HEAD")
+                if let headContent = try? String(contentsOf: headFile, encoding: .utf8)
+                    .trimmingCharacters(in: .whitespacesAndNewlines) {
+                    if headContent.hasPrefix("ref: refs/heads/") {
+                        branch = String(headContent.dropFirst("ref: refs/heads/".count))
+                    }
                 }
-                currentPath = String(line.dropFirst("worktree ".count))
-                currentBranch = ""
-                isBareBranch = false
-            } else if line.hasPrefix("branch ") {
-                let ref = String(line.dropFirst("branch ".count))
-                // refs/heads/main -> main
-                if ref.hasPrefix("refs/heads/") {
-                    currentBranch = String(ref.dropFirst("refs/heads/".count))
-                } else {
-                    currentBranch = ref
-                }
-            } else if line == "bare" {
-                isBareBranch = true
-            } else if line.hasPrefix("HEAD ") {
-                // detached HEAD
-                if currentBranch.isEmpty {
-                    currentBranch = "(detached)"
-                }
+
+                worktrees.append(Worktree(path: worktreePath, branch: branch, isMain: false))
             }
-        }
-
-        // Don't forget the last entry
-        if let path = currentPath, !isBareBranch {
-            worktrees.append(Worktree(
-                path: path,
-                branch: currentBranch,
-                isMain: worktrees.isEmpty
-            ))
         }
 
         return worktrees
     }
 
-    private func parseStatus(_ output: String) -> [(String, FileStatus)] {
+    func diff(worktreePath: String) throws -> [DiffFile] {
+        let url = URL(fileURLWithPath: worktreePath)
+        let repo = try openRepo(at: url)
+
+        // git diff HEAD — staged + unstaged changes vs HEAD
+        let diff = try repo.diff(to: [.workingTree, .index])
+        return convertDiff(diff)
+    }
+
+    func status(worktreePath: String) throws -> [(String, FileStatus)] {
+        let url = URL(fileURLWithPath: worktreePath)
+        let repo = try openRepo(at: url)
+
+        let entries = try repo.status()
         var results: [(String, FileStatus)] = []
-        for line in output.components(separatedBy: "\n") where !line.isEmpty {
-            guard line.count >= 3 else { continue }
-            let worktreeStatus = line[line.index(line.startIndex, offsetBy: 1)]
-            let pathPart = String(line.dropFirst(3))
 
-            let statusChar: Character
-            if worktreeStatus != " " && worktreeStatus != "?" {
-                statusChar = worktreeStatus
-            } else {
-                statusChar = line[line.startIndex]
-            }
+        for entry in entries {
+            let path = entry.workingTree?.newFile.path ?? entry.index?.newFile.path ?? ""
+            guard !path.isEmpty else { continue }
 
-            let status: FileStatus
-            switch statusChar {
-            case "A": status = .added
-            case "M": status = .modified
-            case "D": status = .deleted
-            case "R": status = .renamed
-            case "?": status = .untracked
-            default: status = .modified
-            }
-
-            results.append((pathPart, status))
+            let status = mapStatus(entry.status)
+            results.append((path, status))
         }
+
         return results
+    }
+
+    // MARK: - Helpers
+
+    private func openRepo(at url: URL) throws -> GitRepo {
+        do {
+            return try GitRepo.open(at: url)
+        } catch {
+            throw GitError.notAGitRepository
+        }
+    }
+
+    private func branchName(for repo: GitRepo) -> String {
+        do {
+            let branch = try repo.branch.current
+            return branch.name
+        } catch {
+            return "(detached)"
+        }
+    }
+
+    private func mapStatus(_ statuses: [StatusEntry.Status]) -> FileStatus {
+        // Check for untracked first (workingTreeNew without indexNew)
+        if statuses.contains(.workingTreeNew) && !statuses.contains(.indexNew) {
+            return .untracked
+        }
+        for s in statuses {
+            switch s {
+            case .indexNew, .workingTreeNew:
+                return .added
+            case .indexModified, .workingTreeModified:
+                return .modified
+            case .indexDeleted, .workingTreeDeleted:
+                return .deleted
+            case .indexRenamed, .workingTreeRenamed:
+                return .renamed
+            default:
+                continue
+            }
+        }
+        return .modified
+    }
+
+    // MARK: - Diff Conversion
+
+    private func convertDiff(_ diff: SwiftGitX.Diff) -> [DiffFile] {
+        var files: [DiffFile] = []
+
+        for patch in diff.patches {
+            let delta = patch.delta
+            let filePath = delta.newFile.path
+            let fileStatus = mapDeltaType(delta.type)
+
+            var hunks: [DiffHunk] = []
+
+            for patchHunk in patch.hunks {
+                var lines: [DiffLine] = []
+                var oldLineNum = patchHunk.oldStart
+                var newLineNum = patchHunk.newStart
+
+                for patchLine in patchHunk.lines {
+                    let lineType: DiffLineType
+                    var oldNum: Int? = nil
+                    var newNum: Int? = nil
+
+                    switch patchLine.type {
+                    case .context, .contextEOF:
+                        lineType = .context
+                        oldNum = oldLineNum
+                        newNum = newLineNum
+                        oldLineNum += 1
+                        newLineNum += 1
+                    case .addition, .additionEOF:
+                        lineType = .added
+                        newNum = newLineNum
+                        newLineNum += 1
+                    case .deletion, .deletionEOF:
+                        lineType = .removed
+                        oldNum = oldLineNum
+                        oldLineNum += 1
+                    }
+
+                    // Strip trailing newline from content
+                    var content = patchLine.content
+                    if content.hasSuffix("\n") {
+                        content = String(content.dropLast())
+                    }
+
+                    lines.append(DiffLine(
+                        type: lineType,
+                        content: content,
+                        oldLineNumber: oldNum,
+                        newLineNumber: newNum
+                    ))
+                }
+
+                // Extract function context from hunk header
+                let header = patchHunk.header.trimmingCharacters(in: .whitespacesAndNewlines)
+                var headerContext = ""
+                if let lastAt = header.range(of: "@@", options: .backwards,
+                    range: header.index(header.startIndex, offsetBy: min(2, header.count))..<header.endIndex) {
+                    headerContext = String(header[lastAt.upperBound...]).trimmingCharacters(in: .whitespaces)
+                }
+
+                hunks.append(DiffHunk(
+                    oldStart: patchHunk.oldStart,
+                    oldCount: patchHunk.oldLines,
+                    newStart: patchHunk.newStart,
+                    newCount: patchHunk.newLines,
+                    header: headerContext,
+                    lines: lines
+                ))
+            }
+
+            files.append(DiffFile(
+                path: filePath,
+                status: fileStatus,
+                hunks: hunks
+            ))
+        }
+
+        return files
+    }
+
+    private func mapDeltaType(_ type: SwiftGitX.Diff.DeltaType) -> FileStatus {
+        switch type {
+        case .added: return .added
+        case .deleted: return .deleted
+        case .modified: return .modified
+        case .renamed: return .renamed
+        default: return .modified
+        }
     }
 }

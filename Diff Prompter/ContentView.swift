@@ -256,10 +256,46 @@ struct ContentView: View {
     }
 
     private func saveLastRepo(_ url: URL) {
-        UserDefaults.standard.set(url.path, forKey: "lastRepoPath")
+        // Save a security-scoped bookmark so we can re-access this directory under sandbox
+        do {
+            let bookmarkData = try url.bookmarkData(
+                options: .withSecurityScope,
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+            UserDefaults.standard.set(bookmarkData, forKey: "lastRepoBookmark")
+        } catch {
+            // Fallback: save path (won't work under sandbox on relaunch but keeps old behavior)
+            UserDefaults.standard.set(url.path, forKey: "lastRepoPath")
+        }
     }
 
     private func restoreLastRepo() {
+        // Try bookmark first (sandbox-compatible)
+        if let bookmarkData = UserDefaults.standard.data(forKey: "lastRepoBookmark") {
+            var isStale = false
+            guard let url = try? URL(
+                resolvingBookmarkData: bookmarkData,
+                options: .withSecurityScope,
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            ) else {
+                UserDefaults.standard.removeObject(forKey: "lastRepoBookmark")
+                return
+            }
+
+            guard url.startAccessingSecurityScopedResource() else { return }
+
+            // If the bookmark was stale, re-save it
+            if isStale {
+                saveLastRepo(url)
+            }
+
+            Task { await state.openRepository(at: url) }
+            return
+        }
+
+        // Legacy fallback: path-based (pre-sandbox)
         if let path = UserDefaults.standard.string(forKey: "lastRepoPath") {
             let url = URL(fileURLWithPath: path)
             guard FileManager.default.fileExists(atPath: path) else {

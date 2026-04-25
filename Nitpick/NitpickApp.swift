@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct Diff_PrompterApp: App {
+struct NitpickApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()

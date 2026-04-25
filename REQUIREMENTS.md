@@ -1,8 +1,8 @@
-# Diff Prompter - Requirements Document
+# Nitpick - Requirements Document
 
 ## Overview
 
-Diff Prompter is a native macOS app for solo developers working with AI coding agents. It lets you review git diffs across worktrees, annotate them with comments, and generate a structured prompt to feed back into an AI agent. The core workflow is: open a repo, pick a worktree, review diffs, leave comments, copy the resulting prompt.
+Nitpick is a native macOS app for solo developers working with AI coding agents. It lets you review git diffs across worktrees, annotate them with comments, and generate a structured prompt to feed back into an AI agent. The core workflow is: open a repo, pick a worktree, review diffs, leave comments, copy the resulting prompt.
 
 ---
 

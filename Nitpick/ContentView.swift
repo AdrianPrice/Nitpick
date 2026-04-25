@@ -11,7 +11,7 @@ struct ContentView: View {
         } detail: {
             detailView
         }
-        .navigationTitle(state.repository?.name ?? "Diff Prompter")
+        .navigationTitle(state.repository?.name ?? "Nitpick")
         .toolbar {
             toolbarContent
         }

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PromptPreviewSheet: View {
     @Bindable var state: AppState
+    var onCopied: () -> Void = {}
 
     var body: some View {
         VStack(spacing: 0) {
@@ -42,6 +43,7 @@ struct PromptPreviewSheet: View {
 
                 Button("Copy to Clipboard") {
                     state.copyPromptFromPreview()
+                    onCopied()
                 }
                 .keyboardShortcut(.return, modifiers: .command)
                 .buttonStyle(.borderedProminent)

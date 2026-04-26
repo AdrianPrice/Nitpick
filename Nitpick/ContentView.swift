@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @State var state = AppState()
     @State private var showClearConfirmation = false
+    @State private var showClearAfterCopy = false
 
     var body: some View {
         NavigationSplitView {
@@ -37,8 +38,16 @@ struct ContentView: View {
         } message: {
             Text("Remove all \(state.commentCount) comments? This cannot be undone.")
         }
+        .alert("Clear Comments?", isPresented: $showClearAfterCopy) {
+            Button("Clear All", role: .destructive) { state.clearComments() }
+            Button("Keep", role: .cancel) {}
+        } message: {
+            Text("Prompt copied. Would you like to clear your \(state.commentCount) comments?")
+        }
         .sheet(isPresented: $state.showPromptPreview) {
-            PromptPreviewSheet(state: state)
+            PromptPreviewSheet(state: state) {
+                showClearAfterCopy = true
+            }
         }
         .onAppear {
             restoreLastRepo()
@@ -109,7 +118,10 @@ struct ContentView: View {
     // MARK: - File Header
 
     private func fileHeaderBar(_ file: DiffFile) -> some View {
-        VStack(spacing: 0) {
+        let reviewed = state.isReviewed(file.id)
+        let count = state.fileCommentCount(file.id)
+
+        return VStack(alignment: .trailing, spacing: 12) {
             HStack {
                 Image(systemName: file.status.symbol)
                     .foregroundStyle(statusColor(file.status))
@@ -120,20 +132,16 @@ struct ContentView: View {
 
                 Spacer()
 
-                Picker("View", selection: $state.diffViewMode) {
+                Picker("", selection: $state.diffViewMode) {
                     ForEach(DiffViewMode.allCases, id: \.self) { mode in
                         Text(mode.rawValue).tag(mode)
                     }
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 180)
+                .fixedSize()
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 6)
-            .padding(.bottom, 4)
 
             HStack {
-                let count = state.fileCommentCount(file.id)
                 if count > 0 {
                     Label("\(count) comment\(count == 1 ? "" : "s")", systemImage: "bubble.left")
                         .font(.caption)
@@ -142,7 +150,6 @@ struct ContentView: View {
 
                 Spacer()
 
-                let reviewed = state.isReviewed(file.id)
                 Button {
                     state.toggleReviewed(file.id)
                 } label: {
@@ -155,9 +162,9 @@ struct ContentView: View {
                 .tint(reviewed ? .green : nil)
                 .controlSize(.small)
             }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 6)
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
     }
 
     // MARK: - Comment Action Bar
@@ -193,6 +200,7 @@ struct ContentView: View {
 
             Button {
                 state.generatePrompt()
+                showClearAfterCopy = true
             } label: {
                 Label("Copy Prompt", systemImage: "doc.on.clipboard")
                     .font(.callout.weight(.medium))

@@ -81,6 +81,7 @@ struct SidebarView: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)
+                .id(state.recentCommits.map(\.id).hashValue)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12)

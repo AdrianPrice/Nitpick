@@ -175,8 +175,15 @@ struct ContentView: View {
                 .foregroundStyle(.blue)
 
             let files = state.commentedFileCount
-            Text("\(state.commentCount) comment\(state.commentCount == 1 ? "" : "s") across \(files) file\(files == 1 ? "" : "s")")
-                .font(.callout.weight(.medium))
+            let targets = state.commentedTargetCount
+            let base = "\(state.commentCount) comment\(state.commentCount == 1 ? "" : "s") across \(files) file\(files == 1 ? "" : "s")"
+            if targets > 1 {
+                Text("\(base) across \(targets) commits")
+                    .font(.callout.weight(.medium))
+            } else {
+                Text(base)
+                    .font(.callout.weight(.medium))
+            }
 
             Spacer()
 

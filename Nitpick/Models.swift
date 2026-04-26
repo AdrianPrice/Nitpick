@@ -124,6 +124,44 @@ struct Repository {
     }
 }
 
+// MARK: - Diff Target
+
+/// What the diff is comparing: working tree changes or a specific commit vs its parent.
+enum DiffTarget: Hashable, Identifiable {
+    case workingTree
+    case commit(CommitInfo)
+
+    var id: String {
+        switch self {
+        case .workingTree: return "working-tree"
+        case .commit(let info): return info.id
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .workingTree: return "Uncommitted"
+        case .commit(let info): return info.shortId + " " + info.summary
+        }
+    }
+
+    var isWorkingTree: Bool {
+        if case .workingTree = self { return true }
+        return false
+    }
+}
+
+/// Lightweight commit info, decoupled from SwiftGitX types.
+struct CommitInfo: Hashable, Identifiable {
+    let id: String        // full SHA hex
+    let summary: String
+    let message: String
+    let date: Date
+    let authorName: String
+
+    var shortId: String { String(id.prefix(7)) }
+}
+
 // MARK: - Comment Model
 
 struct LineComment: Identifiable {
@@ -137,6 +175,7 @@ struct LineComment: Identifiable {
     let lineContent: String       // first line's content (for display)
     var text: String
     let hunkContext: [DiffLine]   // all selected lines + surrounding context
+    let diffTarget: DiffTarget    // which diff target this comment was made on
 
     init(
         id: UUID = UUID(),
@@ -148,7 +187,8 @@ struct LineComment: Identifiable {
         lineType: DiffLineType,
         lineContent: String,
         text: String,
-        hunkContext: [DiffLine]
+        hunkContext: [DiffLine],
+        diffTarget: DiffTarget = .workingTree
     ) {
         self.id = id
         self.fileId = fileId
@@ -160,5 +200,6 @@ struct LineComment: Identifiable {
         self.lineContent = lineContent
         self.text = text
         self.hunkContext = hunkContext
+        self.diffTarget = diffTarget
     }
 }

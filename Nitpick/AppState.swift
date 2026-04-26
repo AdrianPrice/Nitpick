@@ -12,6 +12,8 @@ final class AppState {
     var diffFiles: [DiffFile] = []
     var selectedFile: DiffFile?
     var selectedFileId: String?
+    var diffTarget: DiffTarget = .workingTree
+    var recentCommits: [CommitInfo] = []
     var comments: [LineComment] = []
     var isLoading = false
     var errorMessage: String?
@@ -42,6 +44,10 @@ final class AppState {
         Set(comments.map(\.filePath)).count
     }
 
+    var commentedTargetCount: Int {
+        Set(comments.map(\.diffTarget)).count
+    }
+
     func commentsForFile(_ fileId: String) -> [LineComment] {
         comments.filter { $0.fileId == fileId }
     }
@@ -51,7 +57,7 @@ final class AppState {
     }
 
     func fileCommentCount(_ fileId: String) -> Int {
-        comments.filter { $0.fileId == fileId }.count
+        comments.filter { $0.fileId == fileId && $0.diffTarget == diffTarget }.count
     }
 
     private let gitService = GitService()
@@ -81,7 +87,19 @@ final class AppState {
 
     func selectWorktree(_ worktree: Worktree) {
         selectedWorktree = worktree
+        diffTarget = .workingTree
+        recentCommits = []
         selectFile(nil)
+        Task {
+            await loadCommits()
+            await refreshDiff()
+        }
+    }
+
+    func selectDiffTarget(_ target: DiffTarget) {
+        diffTarget = target
+        selectFile(nil)
+        reviewedFileHashes.removeAll()
         Task { await refreshDiff() }
     }
 
@@ -91,31 +109,42 @@ final class AppState {
         defer { isLoading = false }
 
         do {
-            // Get diff and status from libgit2
-            let diffFiles = try await gitService.diff(worktreePath: worktree.path)
-            let statuses = try await gitService.status(worktreePath: worktree.path)
+            let files: [DiffFile]
 
-            var files = diffFiles
+            switch diffTarget {
+            case .workingTree:
+                // Get diff and status from libgit2
+                let diffFiles = try await gitService.diff(worktreePath: worktree.path)
+                let statuses = try await gitService.status(worktreePath: worktree.path)
 
-            // Update file statuses from status output (status may have more detail)
-            let statusMap = Dictionary(statuses, uniquingKeysWith: { first, _ in first })
-            for i in files.indices {
-                if let status = statusMap[files[i].path] {
-                    files[i] = DiffFile(
-                        path: files[i].path,
-                        status: status,
-                        hunks: files[i].hunks
-                    )
+                var merged = diffFiles
+
+                // Update file statuses from status output (status may have more detail)
+                let statusMap = Dictionary(statuses, uniquingKeysWith: { first, _ in first })
+                for i in merged.indices {
+                    if let status = statusMap[merged[i].path] {
+                        merged[i] = DiffFile(
+                            path: merged[i].path,
+                            status: status,
+                            hunks: merged[i].hunks
+                        )
+                    }
                 }
+
+                // Add files from status that aren't in the diff (e.g. untracked)
+                let diffPaths = Set(merged.map(\.path))
+                for (path, status) in statuses where !diffPaths.contains(path) {
+                    merged.append(DiffFile(path: path, status: status, hunks: []))
+                }
+
+                files = merged.sorted { $0.path < $1.path }
+
+            case .commit(let info):
+                let diffFiles = try await gitService.diffCommit(worktreePath: worktree.path, commitId: info.id)
+                files = diffFiles.sorted { $0.path < $1.path }
             }
 
-            // Add files from status that aren't in the diff (e.g. untracked)
-            let diffPaths = Set(files.map(\.path))
-            for (path, status) in statuses where !diffPaths.contains(path) {
-                files.append(DiffFile(path: path, status: status, hunks: []))
-            }
-
-            self.diffFiles = files.sorted { $0.path < $1.path }
+            self.diffFiles = files
 
             // Unmark reviewed files whose diff content has changed
             for file in self.diffFiles {
@@ -133,15 +162,24 @@ final class AppState {
 
             // Update selectedFile to the new instance (ID is stable, based on path)
             if let currentId = selectedFileId,
-               let updated = diffFiles.first(where: { $0.id == currentId }) {
+               let updated = self.diffFiles.first(where: { $0.id == currentId }) {
                 selectedFile = updated
             } else {
-                selectFile(diffFiles.first)
+                selectFile(self.diffFiles.first)
             }
 
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    private func loadCommits() async {
+        guard let worktree = selectedWorktree else { return }
+        do {
+            recentCommits = try await gitService.listCommits(worktreePath: worktree.path)
+        } catch {
+            recentCommits = []
         }
     }
 
@@ -165,7 +203,8 @@ final class AppState {
             lineType: firstLine.type,
             lineContent: firstLine.content,
             text: text,
-            hunkContext: context
+            hunkContext: context,
+            diffTarget: diffTarget
         )
         comments.append(comment)
     }
@@ -189,6 +228,7 @@ final class AppState {
         let prompt = PromptGenerator.generate(
             repoName: repo.name,
             worktree: worktree,
+            diffTarget: diffTarget,
             files: diffFiles,
             comments: comments,
             preamble: preamble
@@ -213,6 +253,7 @@ final class AppState {
         previewPromptText = PromptGenerator.generate(
             repoName: repo.name,
             worktree: worktree,
+            diffTarget: diffTarget,
             files: diffFiles,
             comments: comments,
             preamble: preamble
@@ -284,7 +325,9 @@ final class AppState {
         let filesByPath = Dictionary(diffFiles.map { ($0.path, $0) }, uniquingKeysWith: { first, _ in first })
 
         comments = comments.compactMap { comment in
-            guard let newFile = filesByPath[comment.filePath] else { return nil }
+            // If this comment's file isn't in the current diff, preserve it as-is
+            // (e.g. comment from a different commit's diff)
+            guard let newFile = filesByPath[comment.filePath] else { return comment }
             let newAllLines = newFile.hunks.flatMap(\.lines)
 
             // Match each old line to a new line by (type, lineNumber, content)
@@ -318,7 +361,7 @@ final class AppState {
                 }
             }
 
-            guard !newLineIds.isEmpty else { return nil }
+            guard !newLineIds.isEmpty else { return comment }
 
             // Rebuild hunk context from the new file
             let newHunkContext: [DiffLine] = {
@@ -341,7 +384,8 @@ final class AppState {
                 lineType: comment.lineType,
                 lineContent: comment.lineContent,
                 text: comment.text,
-                hunkContext: newHunkContext
+                hunkContext: newHunkContext,
+                diffTarget: comment.diffTarget
             )
         }
     }

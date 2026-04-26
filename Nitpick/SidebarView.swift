@@ -9,6 +9,8 @@ struct SidebarView: View {
         VStack(spacing: 0) {
             worktreePicker
             Divider()
+            commitPicker
+            Divider()
             fileFilterField
             Divider()
             fileList
@@ -52,6 +54,40 @@ struct SidebarView: View {
         }
     }
 
+    // MARK: - Commit Picker
+
+    @ViewBuilder
+    private var commitPicker: some View {
+        if state.repository != nil {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Diff Target")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
+
+                Picker("Target", selection: Binding(
+                    get: { state.diffTarget },
+                    set: { state.selectDiffTarget($0) }
+                )) {
+                    Text("Uncommitted").tag(DiffTarget.workingTree)
+
+                    if !state.recentCommits.isEmpty {
+                        Divider()
+                        ForEach(state.recentCommits) { commit in
+                            Text("\(commit.shortId) \(commit.summary)")
+                                .lineLimit(1)
+                                .tag(DiffTarget.commit(commit))
+                        }
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+        }
+    }
+
     // MARK: - File Filter
 
     private var fileFilterField: some View {
@@ -79,12 +115,15 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .id("\(state.selectedWorktree?.path ?? "none"):\(state.diffTarget.id)")
         .overlay {
             if state.diffFiles.isEmpty && !state.isLoading {
                 ContentUnavailableView(
                     "No Changes",
                     systemImage: "checkmark.circle",
-                    description: Text("Working tree is clean")
+                    description: Text(state.diffTarget.isWorkingTree
+                        ? "Working tree is clean"
+                        : "No changes in this commit")
                 )
             }
         }

@@ -102,6 +102,51 @@ actor GitService {
         return results
     }
 
+    /// Returns recent commits for the given worktree.
+    func listCommits(worktreePath: String, limit: Int = 50) throws -> [CommitInfo] {
+        let url = URL(fileURLWithPath: worktreePath)
+        let repo = try openRepo(at: url)
+
+        let commits = try repo.log(sorting: .time)
+        var result: [CommitInfo] = []
+
+        for commit in commits {
+            result.append(CommitInfo(
+                id: commit.id.hex,
+                summary: commit.summary,
+                message: commit.message,
+                date: commit.date,
+                authorName: commit.author.name
+            ))
+            if result.count >= limit { break }
+        }
+
+        return result
+    }
+
+    /// Returns the diff for a specific commit vs its parent.
+    func diffCommit(worktreePath: String, commitId: String) throws -> [DiffFile] {
+        let url = URL(fileURLWithPath: worktreePath)
+        let repo = try openRepo(at: url)
+
+        // Find the commit by walking the log (SwiftGitX doesn't expose lookup by OID directly)
+        let commits = try repo.log(sorting: .time)
+        var targetCommit: SwiftGitX.Commit?
+        for commit in commits {
+            if commit.id.hex == commitId {
+                targetCommit = commit
+                break
+            }
+        }
+
+        guard let commit = targetCommit else {
+            throw GitError.commandFailed("Commit \(commitId) not found")
+        }
+
+        let diff = try repo.diff(commit: commit)
+        return convertDiff(diff)
+    }
+
     // MARK: - Helpers
 
     private func openRepo(at url: URL) throws -> GitRepo {

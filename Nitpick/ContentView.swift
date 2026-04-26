@@ -63,7 +63,10 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             guard state.repository != nil else { return }
-            Task { await state.refreshDiff() }
+            Task {
+                await state.refreshWorktrees()
+                await state.refreshDiff()
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .openRepository)) { _ in
             openRepo()
@@ -86,12 +89,14 @@ struct ContentView: View {
                         systemImage: "doc.zipper",
                         description: Text("Binary files cannot be displayed as a diff.")
                     )
+                    .frame(maxHeight: .infinity)
                 } else if file.allLines.count > 10_000 {
                     ContentUnavailableView(
                         "Large File",
                         systemImage: "exclamationmark.triangle",
                         description: Text("This file has \(file.allLines.count) lines. Displaying it may affect performance.")
                     )
+                    .frame(maxHeight: .infinity)
                 } else {
                     switch state.diffViewMode {
                     case .unified:

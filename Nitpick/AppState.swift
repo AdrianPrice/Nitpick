@@ -87,6 +87,24 @@ final class AppState {
         }
     }
 
+    func refreshWorktrees() async {
+        guard let repo = repository else { return }
+        do {
+            let worktrees = try await gitService.listWorktrees(repoPath: repo.path)
+            repository?.worktrees = worktrees
+
+            // If current worktree was removed, switch to first available
+            if let current = selectedWorktree,
+               !worktrees.contains(where: { $0.path == current.path }) {
+                if let first = worktrees.first {
+                    selectWorktree(first)
+                }
+            }
+        } catch {
+            // Silent — worktree refresh is best-effort
+        }
+    }
+
     func selectWorktree(_ worktree: Worktree) {
         selectedWorktree = worktree
         diffTarget = .workingTree
@@ -133,7 +151,8 @@ final class AppState {
                         merged[i] = DiffFile(
                             path: merged[i].path,
                             status: status,
-                            hunks: merged[i].hunks
+                            hunks: merged[i].hunks,
+                            isBinary: merged[i].isBinary
                         )
                     }
                 }
@@ -142,11 +161,16 @@ final class AppState {
                 // Read file content to create a synthetic "all added" diff
                 let diffPaths = Set(merged.map(\.path))
                 for (path, status) in statuses where !diffPaths.contains(path) {
-                    let hunks = Self.syntheticHunks(
-                        forFileAt: path,
-                        relativeTo: worktree.path
-                    )
-                    merged.append(DiffFile(path: path, status: status, hunks: hunks))
+                    let fullURL = URL(fileURLWithPath: worktree.path).appendingPathComponent(path)
+                    if Self.isBinaryFile(at: fullURL) {
+                        merged.append(DiffFile(path: path, status: status, hunks: [], isBinary: true))
+                    } else {
+                        let hunks = Self.syntheticHunks(
+                            forFileAt: path,
+                            relativeTo: worktree.path
+                        )
+                        merged.append(DiffFile(path: path, status: status, hunks: hunks))
+                    }
                 }
 
                 files = merged.sorted { $0.path < $1.path }
@@ -451,6 +475,14 @@ final class AppState {
         let start = max(0, firstIdx - radius)
         let end = min(hunkLines.count - 1, lastIdx + radius)
         return Array(hunkLines[start...end])
+    }
+
+    /// Detect binary files by checking for null bytes in the first 8KB.
+    private static func isBinaryFile(at url: URL) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { handle.closeFile() }
+        guard let data = try? handle.read(upToCount: 8192) else { return false }
+        return data.contains(0)
     }
 
     /// Read file content and create a synthetic "all added" hunk for untracked/new files.

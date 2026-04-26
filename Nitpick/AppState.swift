@@ -91,6 +91,7 @@ final class AppState {
         selectedWorktree = worktree
         diffTarget = .workingTree
         recentCommits = []
+        diffFiles = []
         selectFile(nil)
         Task {
             await loadCommits()
@@ -100,6 +101,7 @@ final class AppState {
 
     func selectDiffTarget(_ target: DiffTarget) {
         diffTarget = target
+        diffFiles = []
         selectFile(nil)
         reviewedFileHashes.removeAll()
         Task { await refreshDiff() }

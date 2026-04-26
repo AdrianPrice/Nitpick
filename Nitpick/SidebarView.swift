@@ -116,7 +116,7 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
-        .id("\(state.selectedWorktree?.path ?? "none"):\(state.diffTarget.id)")
+        .id("\(state.selectedWorktree?.path ?? "none"):\(state.diffTarget.id):\(state.filteredFiles.map(\.path).joined(separator: ",").hashValue)")
         .overlay {
             if state.diffFiles.isEmpty && !state.isLoading {
                 ContentUnavailableView(
@@ -226,7 +226,7 @@ struct FileTreeNode: Identifiable {
                     && node.children[i].children[0].isFolder {
                 let child = node.children[i].children[0]
                 node.children[i] = FileTreeNode(
-                    id: child.id,
+                    id: "folder:\(node.children[i].name)/\(child.name)",
                     name: "\(node.children[i].name)/\(child.name)",
                     file: nil,
                     commentCount: 0,

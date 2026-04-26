@@ -39,9 +39,7 @@ struct PromptPreviewSheet: View {
                 }
                 .keyboardShortcut(.escape, modifiers: [])
 
-                Button {
-                    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-                } label: {
+                SettingsLink {
                     Label("Edit Preamble", systemImage: "pencil")
                 }
 
@@ -58,7 +56,9 @@ struct PromptPreviewSheet: View {
         }
         .frame(minWidth: 600, idealWidth: 800, minHeight: 400, idealHeight: 600)
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
-            state.previewPrompt()
+            // Refresh preview text (e.g. after editing preamble in Settings)
+            // but don't use previewPrompt() as it also sets showPromptPreview
+            state.refreshPreviewText()
         }
     }
 }

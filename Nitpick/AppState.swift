@@ -204,6 +204,11 @@ final class AppState {
     }
 
     func previewPrompt() {
+        refreshPreviewText()
+        showPromptPreview = true
+    }
+
+    func refreshPreviewText() {
         guard let repo = repository, let worktree = selectedWorktree else { return }
         previewPromptText = PromptGenerator.generate(
             repoName: repo.name,
@@ -212,7 +217,6 @@ final class AppState {
             comments: comments,
             preamble: preamble
         )
-        showPromptPreview = true
     }
 
     func copyPromptFromPreview() {

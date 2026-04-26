@@ -21,6 +21,8 @@ struct SideBySideDiffView: View {
     @FocusState private var isEditFieldFocused: Bool
     @State private var collapsedHunkIds: Set<UUID> = []
 
+    private let syntaxService = SyntaxHighlightingService.instance()
+
     private let coordSpace = "sideBySideDiffList"
 
     private var flatLines: [(line: DiffLine, hunkLines: [DiffLine])] {
@@ -220,9 +222,8 @@ struct SideBySideDiffView: View {
                     .frame(width: 44, alignment: .trailing)
                     .padding(.trailing, 4)
 
-                Text(line.content)
+                highlightedText(for: line)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .foregroundStyle(.primary)
 
                 if isFirstOfComment {
                     Image(systemName: "bubble.left.fill")
@@ -260,6 +261,18 @@ struct SideBySideDiffView: View {
                     }
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func highlightedText(for line: DiffLine) -> some View {
+        let allLines = file.hunks.flatMap(\.lines)
+        if let index = allLines.firstIndex(where: { $0.id == line.id }),
+           let nsAttr = syntaxService.highlightedLine(for: file, lineIndex: index, content: line.content) {
+            Text(AttributedString(nsAttr))
+        } else {
+            Text(line.content)
+                .foregroundStyle(.primary)
         }
     }
 

@@ -5,6 +5,7 @@ struct ContentView: View {
     @State var state = AppState()
     @State private var showClearConfirmation = false
     @State private var showClearAfterCopy = false
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         NavigationSplitView {
@@ -48,6 +49,9 @@ struct ContentView: View {
             PromptPreviewSheet(state: state) {
                 showClearAfterCopy = true
             }
+        }
+        .onChange(of: colorScheme) {
+            SyntaxHighlightingService.instance().updateAppearanceIfNeeded()
         }
         .onAppear {
             restoreLastRepo()

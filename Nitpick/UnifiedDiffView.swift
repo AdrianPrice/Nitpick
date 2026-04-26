@@ -85,6 +85,8 @@ struct UnifiedDiffView: View {
     @FocusState private var isEditFieldFocused: Bool
     @State private var collapsedHunkIds: Set<UUID> = []
 
+    private let syntaxService = SyntaxHighlightingService.instance()
+
     private var flatLines: [(line: DiffLine, hunkLines: [DiffLine])] {
         file.hunks.filter { !collapsedHunkIds.contains($0.id) }.flatMap { hunk in
             hunk.lines.map { (line: $0, hunkLines: hunk.lines) }
@@ -277,8 +279,7 @@ struct UnifiedDiffView: View {
                 .foregroundStyle(linePrefixColor(line.type))
                 .frame(width: 14, alignment: .center)
 
-            Text(line.content)
-                .foregroundStyle(.primary)
+            highlightedText(for: line)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             if isFirstOfComment {
@@ -486,6 +487,18 @@ struct UnifiedDiffView: View {
         case .added: return "+"
         case .removed: return "-"
         case .context: return " "
+        }
+    }
+
+    @ViewBuilder
+    private func highlightedText(for line: DiffLine) -> some View {
+        let allLines = file.hunks.flatMap(\.lines)
+        if let index = allLines.firstIndex(where: { $0.id == line.id }),
+           let nsAttr = syntaxService.highlightedLine(for: file, lineIndex: index, content: line.content) {
+            Text(AttributedString(nsAttr))
+        } else {
+            Text(line.content)
+                .foregroundStyle(.primary)
         }
     }
 

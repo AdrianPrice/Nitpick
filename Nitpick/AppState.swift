@@ -135,9 +135,14 @@ final class AppState {
                 }
 
                 // Add files from status that aren't in the diff (e.g. untracked)
+                // Read file content to create a synthetic "all added" diff
                 let diffPaths = Set(merged.map(\.path))
                 for (path, status) in statuses where !diffPaths.contains(path) {
-                    merged.append(DiffFile(path: path, status: status, hunks: []))
+                    let hunks = Self.syntheticHunks(
+                        forFileAt: path,
+                        relativeTo: worktree.path
+                    )
+                    merged.append(DiffFile(path: path, status: status, hunks: hunks))
                 }
 
                 files = merged.sorted { $0.path < $1.path }
@@ -404,6 +409,31 @@ final class AppState {
         let start = max(0, firstIdx - radius)
         let end = min(hunkLines.count - 1, lastIdx + radius)
         return Array(hunkLines[start...end])
+    }
+
+    /// Read file content and create a synthetic "all added" hunk for untracked/new files.
+    private static func syntheticHunks(forFileAt relativePath: String, relativeTo root: String) -> [DiffHunk] {
+        let url = URL(fileURLWithPath: root).appendingPathComponent(relativePath)
+        guard let content = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+
+        let fileLines = content.components(separatedBy: "\n")
+        // Drop trailing empty element from trailing newline
+        let trimmed = fileLines.last == "" ? Array(fileLines.dropLast()) : fileLines
+
+        guard !trimmed.isEmpty else { return [] }
+
+        let diffLines = trimmed.enumerated().map { idx, text in
+            DiffLine(type: .added, content: text, oldLineNumber: nil, newLineNumber: idx + 1)
+        }
+
+        return [DiffHunk(
+            oldStart: 0,
+            oldCount: 0,
+            newStart: 1,
+            newCount: trimmed.count,
+            header: "(new file)",
+            lines: diffLines
+        )]
     }
 }
 

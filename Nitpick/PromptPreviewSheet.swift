@@ -39,6 +39,12 @@ struct PromptPreviewSheet: View {
                 }
                 .keyboardShortcut(.escape, modifiers: [])
 
+                Button {
+                    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                } label: {
+                    Label("Edit Preamble", systemImage: "pencil")
+                }
+
                 Spacer()
 
                 Button("Copy to Clipboard") {
@@ -51,5 +57,8 @@ struct PromptPreviewSheet: View {
             .padding()
         }
         .frame(minWidth: 600, idealWidth: 800, minHeight: 400, idealHeight: 600)
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            state.previewPrompt()
+        }
     }
 }

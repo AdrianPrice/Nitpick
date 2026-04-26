@@ -108,6 +108,9 @@ final class AppState {
         isLoading = true
         defer { isLoading = false }
 
+        // Refresh commit list so new commits appear in the picker
+        await loadCommits()
+
         do {
             let files: [DiffFile]
 

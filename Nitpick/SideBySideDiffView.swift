@@ -19,11 +19,12 @@ struct SideBySideDiffView: View {
     @State private var editingCommentId: UUID?
     @State private var editingCommentText: String = ""
     @FocusState private var isEditFieldFocused: Bool
+    @State private var collapsedHunkIds: Set<UUID> = []
 
     private let coordSpace = "sideBySideDiffList"
 
     private var flatLines: [(line: DiffLine, hunkLines: [DiffLine])] {
-        file.hunks.flatMap { hunk in
+        file.hunks.filter { !collapsedHunkIds.contains($0.id) }.flatMap { hunk in
             hunk.lines.map { (line: $0, hunkLines: hunk.lines) }
         }
     }
@@ -39,25 +40,27 @@ struct SideBySideDiffView: View {
                     ForEach(file.hunks) { hunk in
                         hunkHeaderView(hunk)
 
-                        let pairs = buildSideBySidePairs(hunk.lines)
-                        ForEach(Array(pairs.enumerated()), id: \.offset) { _, pair in
-                            sideBySideRow(pair, hunkLines: hunk.lines)
+                        if !collapsedHunkIds.contains(hunk.id) {
+                            let pairs = buildSideBySidePairs(hunk.lines)
+                            ForEach(Array(pairs.enumerated()), id: \.offset) { _, pair in
+                                sideBySideRow(pair, hunkLines: hunk.lines)
 
-                            if let left = pair.left, let comment = state.commentForLine(left.id),
-                               isLastLineOfComment(line: left, comment: comment) {
-                                inlineCommentView(comment)
-                                    .id(comment.id)
-                            }
-                            if let right = pair.right, right.id != pair.left?.id,
-                               let comment = state.commentForLine(right.id),
-                               isLastLineOfComment(line: right, comment: comment) {
-                                inlineCommentView(comment)
-                                    .id(comment.id)
-                            }
+                                if let left = pair.left, let comment = state.commentForLine(left.id),
+                                   isLastLineOfComment(line: left, comment: comment) {
+                                    inlineCommentView(comment)
+                                        .id(comment.id)
+                                }
+                                if let right = pair.right, right.id != pair.left?.id,
+                                   let comment = state.commentForLine(right.id),
+                                   isLastLineOfComment(line: right, comment: comment) {
+                                    inlineCommentView(comment)
+                                        .id(comment.id)
+                                }
 
-                            if let lastLine = commentingLines.last {
-                                if (pair.left?.id == lastLine.id) || (pair.right?.id == lastLine.id) {
-                                    commentEditorView()
+                                if let lastLine = commentingLines.last {
+                                    if (pair.left?.id == lastLine.id) || (pair.right?.id == lastLine.id) {
+                                        commentEditorView()
+                                    }
                                 }
                             }
                         }
@@ -149,15 +152,37 @@ struct SideBySideDiffView: View {
     // MARK: - Hunk Header
 
     private func hunkHeaderView(_ hunk: DiffHunk) -> some View {
-        HStack {
+        let isCollapsed = collapsedHunkIds.contains(hunk.id)
+        return HStack(spacing: 4) {
+            Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 12)
+
             Text("@@ -\(hunk.oldStart),\(hunk.oldCount) +\(hunk.newStart),\(hunk.newCount) @@ \(hunk.header)")
                 .foregroundStyle(.secondary)
                 .font(.system(.caption, design: .monospaced))
             Spacer()
+
+            if isCollapsed {
+                Text("\(hunk.lines.count) lines")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 4)
         .background(Color.blue.opacity(0.08))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                if isCollapsed {
+                    collapsedHunkIds.remove(hunk.id)
+                } else {
+                    collapsedHunkIds.insert(hunk.id)
+                }
+            }
+        }
     }
 
     // MARK: - Side by Side Row

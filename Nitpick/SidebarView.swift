@@ -306,6 +306,20 @@ struct FileRow: View {
                 .font(.system(.body, design: .monospaced))
                 .frame(maxWidth: .infinity, alignment: .leading)
 
+            if file.addedCount > 0 || file.removedCount > 0 {
+                HStack(spacing: 2) {
+                    if file.addedCount > 0 {
+                        Text("+\(file.addedCount)")
+                            .foregroundStyle(.green)
+                    }
+                    if file.removedCount > 0 {
+                        Text("-\(file.removedCount)")
+                            .foregroundStyle(.red)
+                    }
+                }
+                .font(.caption.monospacedDigit())
+            }
+
             if commentCount > 0 {
                 Text("\(commentCount)")
                     .font(.caption2.weight(.bold))

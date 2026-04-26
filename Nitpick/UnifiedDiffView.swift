@@ -83,9 +83,10 @@ struct UnifiedDiffView: View {
     @State private var editingCommentId: UUID?
     @State private var editingCommentText: String = ""
     @FocusState private var isEditFieldFocused: Bool
+    @State private var collapsedHunkIds: Set<UUID> = []
 
     private var flatLines: [(line: DiffLine, hunkLines: [DiffLine])] {
-        file.hunks.flatMap { hunk in
+        file.hunks.filter { !collapsedHunkIds.contains($0.id) }.flatMap { hunk in
             hunk.lines.map { (line: $0, hunkLines: hunk.lines) }
         }
     }
@@ -102,17 +103,19 @@ struct UnifiedDiffView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(file.hunks) { hunk in
                         hunkHeaderView(hunk)
-                        ForEach(hunk.lines) { line in
-                            diffLineView(line, hunkLines: hunk.lines)
-                                .modifier(ReportLineGeometry(id: line.id, coordinateSpaceName: coordSpace, store: geoStore))
-                            if let comment = state.commentForLine(line.id),
-                               isLastLineOfComment(line: line, comment: comment) {
-                                existingCommentView(comment)
-                                    .id(comment.id)
-                            }
-                            if let lastCommentingLine = commentingLines.last,
-                               lastCommentingLine.id == line.id {
-                                commentEditorView()
+                        if !collapsedHunkIds.contains(hunk.id) {
+                            ForEach(hunk.lines) { line in
+                                diffLineView(line, hunkLines: hunk.lines)
+                                    .modifier(ReportLineGeometry(id: line.id, coordinateSpaceName: coordSpace, store: geoStore))
+                                if let comment = state.commentForLine(line.id),
+                                   isLastLineOfComment(line: line, comment: comment) {
+                                    existingCommentView(comment)
+                                        .id(comment.id)
+                                }
+                                if let lastCommentingLine = commentingLines.last,
+                                   lastCommentingLine.id == line.id {
+                                    commentEditorView()
+                                }
                             }
                         }
                     }
@@ -211,7 +214,13 @@ struct UnifiedDiffView: View {
     // MARK: - Hunk Header
 
     private func hunkHeaderView(_ hunk: DiffHunk) -> some View {
-        HStack(spacing: 0) {
+        let isCollapsed = collapsedHunkIds.contains(hunk.id)
+        return HStack(spacing: 4) {
+            Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 12)
+
             Text("@@ -\(hunk.oldStart),\(hunk.oldCount) +\(hunk.newStart),\(hunk.newCount) @@")
                 .foregroundStyle(.secondary)
             if !hunk.header.isEmpty {
@@ -219,11 +228,27 @@ struct UnifiedDiffView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
+
+            if isCollapsed {
+                Text("\(hunk.lines.count) lines")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
         }
         .font(.system(.caption, design: .monospaced))
         .padding(.horizontal, 12)
         .padding(.vertical, 4)
         .background(Color.blue.opacity(0.08))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                if isCollapsed {
+                    collapsedHunkIds.remove(hunk.id)
+                } else {
+                    collapsedHunkIds.insert(hunk.id)
+                }
+            }
+        }
     }
 
     // MARK: - Diff Line

@@ -79,6 +79,14 @@ struct DiffFile: Identifiable {
         hunks.flatMap(\.lines)
     }
 
+    var addedCount: Int {
+        hunks.flatMap(\.lines).filter { $0.type == .added }.count
+    }
+
+    var removedCount: Int {
+        hunks.flatMap(\.lines).filter { $0.type == .removed }.count
+    }
+
     /// A hash of the diff content, used to detect changes between refreshes.
     var diffContentHash: Int {
         var hasher = Hasher()

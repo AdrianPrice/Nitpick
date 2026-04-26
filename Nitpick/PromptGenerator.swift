@@ -89,7 +89,16 @@ struct PromptGenerator {
                         output += "> \(prefix)\(contextLine.content)\n"
                     }
 
-                    output += "\nComment: \(comment.text)\n"
+                    // Format comment — use blockquote for multi-line to keep it visually grouped
+                    if comment.text.contains("\n") {
+                        output += "\n**Comment:**\n"
+                        for line in comment.text.components(separatedBy: "\n") {
+                            output += "> \(line)\n"
+                        }
+                        output += "\n"
+                    } else {
+                        output += "\n**Comment:** \(comment.text)\n"
+                    }
                 }
 
                 output += "\n---\n"

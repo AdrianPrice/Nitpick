@@ -83,7 +83,7 @@ struct UnifiedDiffView: View {
     @State private var editingCommentId: UUID?
     @State private var editingCommentText: String = ""
     @FocusState private var isEditFieldFocused: Bool
-    @State private var collapsedHunkIds: Set<UUID> = []
+    @State private var collapsedHunkIds: Set<String> = []
 
     private let syntaxService = SyntaxHighlightingService.instance()
 
@@ -136,6 +136,19 @@ struct UnifiedDiffView: View {
                         proxy.scrollTo(target, anchor: .center)
                     }
                     scrollTarget = nil
+                }
+            }
+            .onChange(of: state.navigatedCommentId) { _, commentId in
+                if let commentId {
+                    scrollTarget = commentId
+                    highlightedCommentId = commentId
+                    Task {
+                        try? await Task.sleep(for: .seconds(1.5))
+                        if highlightedCommentId == commentId {
+                            highlightedCommentId = nil
+                        }
+                    }
+                    state.navigatedCommentId = nil
                 }
             }
         }
@@ -298,6 +311,15 @@ struct UnifiedDiffView: View {
         )
         .contentShape(Rectangle())
         .contextMenu {
+            Button("Copy Line\(selectedLineIds.count > 1 ? "s" : "")") {
+                let linesToCopy = selectedLineIds.isEmpty
+                    ? [line]
+                    : hunkLines.filter { selectedLineIds.contains($0.id) }
+                let text = linesToCopy.map(\.content).joined(separator: "\n")
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+            }
+            Divider()
             if !isCommented {
                 Button("Add Comment") { startCommenting(on: [line], hunkLines: hunkLines) }
             } else {
@@ -348,7 +370,14 @@ struct UnifiedDiffView: View {
                         .textFieldStyle(.plain)
                         .lineLimit(1...5)
                         .focused($isEditFieldFocused)
-                        .onSubmit { saveEditingComment(comment.id) }
+                        .onKeyPress(.return) {
+                            if NSEvent.modifierFlags.contains(.shift) {
+                                editingCommentText += "\n"
+                                return .handled
+                            }
+                            saveEditingComment(comment.id)
+                            return .handled
+                        }
                 } else {
                     Text(comment.text)
                         .font(.system(.body))
@@ -406,8 +435,13 @@ struct UnifiedDiffView: View {
                     .textFieldStyle(.plain)
                     .lineLimit(1...5)
                     .focused($isCommentFieldFocused)
-                    .onSubmit {
+                    .onKeyPress(.return) {
+                        if NSEvent.modifierFlags.contains(.shift) {
+                            commentText += "\n"
+                            return .handled
+                        }
                         submitComment()
+                        return .handled
                     }
             }
 

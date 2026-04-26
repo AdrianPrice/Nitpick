@@ -5,6 +5,8 @@ struct ContentView: View {
     @State var state = AppState()
     @State private var showClearConfirmation = false
     @State private var showClearAfterCopy = false
+    @State private var showError = false
+    @State private var activeSecurityScopedURL: URL?
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -28,10 +30,13 @@ struct ContentView: View {
                     .controlSize(.large)
             }
         }
-        .alert("Error", isPresented: .constant(state.errorMessage != nil)) {
+        .alert("Error", isPresented: $showError) {
             Button("OK") { state.errorMessage = nil }
         } message: {
             Text(state.errorMessage ?? "")
+        }
+        .onChange(of: state.errorMessage) { _, newValue in
+            showError = newValue != nil
         }
         .alert("Clear Comments?", isPresented: $showClearConfirmation) {
             Button("Clear All", role: .destructive) { state.clearComments() }
@@ -75,11 +80,25 @@ struct ContentView: View {
                 fileHeaderBar(file)
                 Divider()
 
-                switch state.diffViewMode {
-                case .unified:
-                    UnifiedDiffView(file: file, state: state)
-                case .sideBySide:
-                    SideBySideDiffView(file: file, state: state)
+                if file.isBinary {
+                    ContentUnavailableView(
+                        "Binary File",
+                        systemImage: "doc.zipper",
+                        description: Text("Binary files cannot be displayed as a diff.")
+                    )
+                } else if file.allLines.count > 10_000 {
+                    ContentUnavailableView(
+                        "Large File",
+                        systemImage: "exclamationmark.triangle",
+                        description: Text("This file has \(file.allLines.count) lines. Displaying it may affect performance.")
+                    )
+                } else {
+                    switch state.diffViewMode {
+                    case .unified:
+                        UnifiedDiffView(file: file, state: state)
+                    case .sideBySide:
+                        SideBySideDiffView(file: file, state: state)
+                    }
                 }
 
                 if state.commentCount > 0 {
@@ -275,6 +294,7 @@ struct ContentView: View {
         panel.message = "Select a git repository root directory"
 
         if panel.runModal() == .OK, let url = panel.url {
+            releaseSecurityScopedResource()
             Task {
                 await state.openRepository(at: url)
                 saveLastRepo(url)
@@ -288,12 +308,18 @@ struct ContentView: View {
                 if let data = item as? Data,
                    let url = URL(dataRepresentation: data, relativeTo: nil) {
                     Task { @MainActor in
+                        releaseSecurityScopedResource()
                         await state.openRepository(at: url)
                         saveLastRepo(url)
                     }
                 }
             }
         }
+    }
+
+    private func releaseSecurityScopedResource() {
+        activeSecurityScopedURL?.stopAccessingSecurityScopedResource()
+        activeSecurityScopedURL = nil
     }
 
     private func saveLastRepo(_ url: URL) {
@@ -326,6 +352,7 @@ struct ContentView: View {
             }
 
             guard url.startAccessingSecurityScopedResource() else { return }
+            activeSecurityScopedURL = url
 
             // If the bookmark was stale, re-save it
             if isStale {

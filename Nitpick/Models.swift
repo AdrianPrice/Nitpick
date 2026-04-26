@@ -30,18 +30,26 @@ enum FileStatus: String, Hashable {
     }
 }
 
-enum DiffLineType: Hashable {
+enum DiffLineType: Hashable, Codable {
     case context
     case added
     case removed
 }
 
-struct DiffLine: Identifiable, Hashable {
-    let id = UUID()
+struct DiffLine: Identifiable, Hashable, Codable {
+    let id: UUID
     let type: DiffLineType
     let content: String
     let oldLineNumber: Int?
     let newLineNumber: Int?
+
+    init(id: UUID = UUID(), type: DiffLineType, content: String, oldLineNumber: Int?, newLineNumber: Int?) {
+        self.id = id
+        self.type = type
+        self.content = content
+        self.oldLineNumber = oldLineNumber
+        self.newLineNumber = newLineNumber
+    }
 
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
@@ -53,25 +61,37 @@ struct DiffLine: Identifiable, Hashable {
 }
 
 struct DiffHunk: Identifiable {
-    let id = UUID()
+    let id: String  // stable ID based on hunk position
     let oldStart: Int
     let oldCount: Int
     let newStart: Int
     let newCount: Int
     let header: String
     var lines: [DiffLine]
+
+    init(oldStart: Int, oldCount: Int, newStart: Int, newCount: Int, header: String, lines: [DiffLine]) {
+        self.id = "\(oldStart):\(oldCount):\(newStart):\(newCount)"
+        self.oldStart = oldStart
+        self.oldCount = oldCount
+        self.newStart = newStart
+        self.newCount = newCount
+        self.header = header
+        self.lines = lines
+    }
 }
 
 struct DiffFile: Identifiable {
     let id: String  // stable ID based on file path
     let path: String
     let status: FileStatus
+    let isBinary: Bool
     var hunks: [DiffHunk]
 
-    init(path: String, status: FileStatus, hunks: [DiffHunk]) {
+    init(path: String, status: FileStatus, hunks: [DiffHunk], isBinary: Bool = false) {
         self.id = path
         self.path = path
         self.status = status
+        self.isBinary = isBinary
         self.hunks = hunks
     }
 
@@ -102,10 +122,17 @@ struct DiffFile: Identifiable {
 }
 
 struct Worktree: Identifiable, Hashable {
-    let id = UUID()
+    let id: String  // path-based stable ID
     let path: String
     let branch: String
     let isMain: Bool
+
+    init(path: String, branch: String, isMain: Bool) {
+        self.id = path
+        self.path = path
+        self.branch = branch
+        self.isMain = isMain
+    }
 
     func hash(into hasher: inout Hasher) {
         hasher.combine(path)
@@ -135,7 +162,7 @@ struct Repository {
 // MARK: - Diff Target
 
 /// What the diff is comparing: working tree changes or a specific commit vs its parent.
-enum DiffTarget: Hashable, Identifiable {
+enum DiffTarget: Hashable, Identifiable, Codable {
     case workingTree
     case commit(CommitInfo)
 
@@ -160,7 +187,7 @@ enum DiffTarget: Hashable, Identifiable {
 }
 
 /// Lightweight commit info, decoupled from SwiftGitX types.
-struct CommitInfo: Hashable, Identifiable {
+struct CommitInfo: Hashable, Identifiable, Codable {
     let id: String        // full SHA hex
     let summary: String
     let message: String
@@ -172,7 +199,7 @@ struct CommitInfo: Hashable, Identifiable {
 
 // MARK: - Comment Model
 
-struct LineComment: Identifiable {
+struct LineComment: Identifiable, Codable {
     let id: UUID
     let fileId: String
     let lineIds: Set<UUID>        // all lines this comment covers

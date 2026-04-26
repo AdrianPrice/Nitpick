@@ -23,6 +23,7 @@ final class AppState {
     var fileFilter: String = ""
     var diffViewMode: DiffViewMode = .unified
     var reviewedFileHashes: [String: Int] = [:]  // fileId -> diff content hash at review time
+    var navigatedCommentId: UUID?  // set by next/previousComment, observed by diff views
 
     // Computed
     var filteredFiles: [DiffFile] {
@@ -74,6 +75,7 @@ final class AppState {
         do {
             let worktrees = try await gitService.listWorktrees(repoPath: path)
             repository = Repository(path: path, worktrees: worktrees)
+            loadComments()
             errorMessage = nil
 
             // Auto-select first worktree
@@ -167,6 +169,7 @@ final class AppState {
 
             // Remap comments to new file/line UUIDs so they survive refresh
             remapCommentsToNewDiff()
+            saveComments()
 
             // Update selectedFile to the new instance (ID is stable, based on path)
             if let currentId = selectedFileId,
@@ -215,16 +218,19 @@ final class AppState {
             diffTarget: diffTarget
         )
         comments.append(comment)
+        saveComments()
     }
 
     func updateComment(_ commentId: UUID, text: String) {
         if let index = comments.firstIndex(where: { $0.id == commentId }) {
             comments[index].text = text
         }
+        saveComments()
     }
 
     func deleteComment(_ commentId: UUID) {
         comments.removeAll { $0.id == commentId }
+        saveComments()
     }
 
     private var preamble: String {
@@ -281,6 +287,7 @@ final class AppState {
 
     func clearComments() {
         comments.removeAll()
+        saveComments()
     }
 
     func toggleReviewed(_ fileId: String) {
@@ -297,26 +304,59 @@ final class AppState {
 
     // Navigate to next/previous comment
     func nextComment() {
-        guard !comments.isEmpty else { return }
-        if let currentFile = selectedFile,
-           let currentComment = comments.first(where: { $0.fileId == currentFile.id }),
-           let idx = comments.firstIndex(where: { $0.id == currentComment.id }),
-           idx + 1 < comments.count {
-            let next = comments[idx + 1]
-            selectFile(diffFiles.first { $0.id == next.fileId })
-        } else if let first = comments.first {
-            selectFile(diffFiles.first { $0.id == first.fileId })
+        let sorted = commentsSortedForNavigation()
+        guard !sorted.isEmpty else { return }
+
+        // Find the current position: navigatedCommentId, or first comment in current file
+        let currentIdx: Int?
+        if let navId = navigatedCommentId {
+            currentIdx = sorted.firstIndex(where: { $0.id == navId })
+        } else if let file = selectedFile {
+            currentIdx = sorted.firstIndex(where: { $0.fileId == file.id }).map { $0 - 1 }
+        } else {
+            currentIdx = nil
         }
+
+        let nextIdx = (currentIdx.map { $0 + 1 } ?? 0)
+        guard nextIdx < sorted.count else { return }
+
+        let comment = sorted[nextIdx]
+        if selectedFile?.id != comment.fileId {
+            selectFile(diffFiles.first { $0.id == comment.fileId })
+        }
+        navigatedCommentId = comment.id
     }
 
     func previousComment() {
-        guard !comments.isEmpty else { return }
-        if let currentFile = selectedFile,
-           let currentComment = comments.first(where: { $0.fileId == currentFile.id }),
-           let idx = comments.firstIndex(where: { $0.id == currentComment.id }),
-           idx > 0 {
-            let prev = comments[idx - 1]
-            selectFile(diffFiles.first { $0.id == prev.fileId })
+        let sorted = commentsSortedForNavigation()
+        guard !sorted.isEmpty else { return }
+
+        let currentIdx: Int?
+        if let navId = navigatedCommentId {
+            currentIdx = sorted.firstIndex(where: { $0.id == navId })
+        } else if let file = selectedFile {
+            currentIdx = sorted.lastIndex(where: { $0.fileId == file.id }).map { $0 + 1 }
+        } else {
+            currentIdx = nil
+        }
+
+        let prevIdx = (currentIdx.map { $0 - 1 } ?? sorted.count - 1)
+        guard prevIdx >= 0 else { return }
+
+        let comment = sorted[prevIdx]
+        if selectedFile?.id != comment.fileId {
+            selectFile(diffFiles.first { $0.id == comment.fileId })
+        }
+        navigatedCommentId = comment.id
+    }
+
+    private func commentsSortedForNavigation() -> [LineComment] {
+        let fileOrder = Dictionary(diffFiles.enumerated().map { ($0.element.id, $0.offset) }, uniquingKeysWith: { f, _ in f })
+        return comments.sorted {
+            let f0 = fileOrder[$0.fileId] ?? Int.max
+            let f1 = fileOrder[$1.fileId] ?? Int.max
+            if f0 != f1 { return f0 < f1 }
+            return ($0.startLineNumber ?? 0) < ($1.startLineNumber ?? 0)
         }
     }
 
@@ -434,6 +474,39 @@ final class AppState {
             header: "(new file)",
             lines: diffLines
         )]
+    }
+
+    // MARK: - Comment Persistence
+
+    private var commentsFileURL: URL? {
+        guard let repoPath = repository?.path else { return nil }
+        let hash = repoPath.data(using: .utf8)!.map { String(format: "%02x", $0) }.joined().suffix(16)
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("Nitpick", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("comments-\(hash).json")
+    }
+
+    func saveComments() {
+        guard let url = commentsFileURL else { return }
+        do {
+            let data = try JSONEncoder().encode(comments)
+            try data.write(to: url, options: .atomic)
+        } catch {
+            // Silent failure — persistence is best-effort
+        }
+    }
+
+    func loadComments() {
+        guard let url = commentsFileURL,
+              FileManager.default.fileExists(atPath: url.path) else { return }
+        do {
+            let data = try Data(contentsOf: url)
+            comments = try JSONDecoder().decode([LineComment].self, from: data)
+        } catch {
+            // If file is corrupted, start fresh
+            comments = []
+        }
     }
 }
 

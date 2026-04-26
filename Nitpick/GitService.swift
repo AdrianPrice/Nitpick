@@ -197,8 +197,15 @@ actor GitService {
             let delta = patch.delta
             let filePath = delta.newFile.path
             let fileStatus = mapDeltaType(delta.type)
+            let isBinary = delta.newFile.flags.contains(.binary) || delta.oldFile.flags.contains(.binary)
 
             var hunks: [DiffHunk] = []
+
+            // Skip hunk parsing for binary files
+            guard !isBinary else {
+                files.append(DiffFile(path: filePath, status: fileStatus, hunks: [], isBinary: true))
+                continue
+            }
 
             for patchHunk in patch.hunks {
                 var lines: [DiffLine] = []

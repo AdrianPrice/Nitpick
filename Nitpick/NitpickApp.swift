@@ -18,7 +18,50 @@ struct NitpickApp: App {
 
             ReviewCommands()
         }
+
+        Settings {
+            SettingsView()
+        }
     }
+}
+
+// MARK: - Settings View
+
+struct SettingsView: View {
+    @AppStorage("promptPreamble") private var preamble = PromptPreamble.defaultText
+
+    var body: some View {
+        Form {
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("This text is prepended to every generated prompt.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    TextEditor(text: $preamble)
+                        .font(.system(.body, design: .monospaced))
+                        .frame(minHeight: 120)
+
+                    HStack {
+                        Spacer()
+                        Button("Reset to Default") {
+                            preamble = PromptPreamble.defaultText
+                        }
+                    }
+                }
+            } header: {
+                Text("Prompt Preamble")
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 500, height: 280)
+    }
+}
+
+enum PromptPreamble {
+    static let defaultText = """
+        I've reviewed the changes and left some comments below. Please go through each comment carefully. For issues you agree with, implement the fix. For those you disagree with, explain your reasoning so we can discuss.
+        """
 }
 
 // MARK: - Review Menu Commands

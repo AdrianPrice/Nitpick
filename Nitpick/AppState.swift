@@ -180,13 +180,18 @@ final class AppState {
         comments.removeAll { $0.id == commentId }
     }
 
+    private var preamble: String {
+        UserDefaults.standard.string(forKey: "promptPreamble") ?? PromptPreamble.defaultText
+    }
+
     func generatePrompt() {
         guard let repo = repository, let worktree = selectedWorktree else { return }
         let prompt = PromptGenerator.generate(
             repoName: repo.name,
             worktree: worktree,
             files: diffFiles,
-            comments: comments
+            comments: comments,
+            preamble: preamble
         )
         PromptGenerator.copyToClipboard(prompt)
         showCopiedToast = true
@@ -204,7 +209,8 @@ final class AppState {
             repoName: repo.name,
             worktree: worktree,
             files: diffFiles,
-            comments: comments
+            comments: comments,
+            preamble: preamble
         )
         showPromptPreview = true
     }

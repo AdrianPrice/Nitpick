@@ -8,14 +8,23 @@ struct PromptGenerator {
         repoName: String,
         worktree: Worktree,
         files: [DiffFile],
-        comments: [LineComment]
+        comments: [LineComment],
+        preamble: String
     ) -> String {
         guard !comments.isEmpty else { return "" }
 
         let commentsByFile = Dictionary(grouping: comments, by: { $0.filePath })
         let filesWithComments = commentsByFile.keys.sorted()
 
-        var output = """
+        var output = ""
+
+        // Add preamble if non-empty
+        let trimmedPreamble = preamble.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedPreamble.isEmpty {
+            output += "\(trimmedPreamble)\n\n---\n\n"
+        }
+
+        output += """
         Repository: \(repoName)
         Branch: \(worktree.branch)
         Files reviewed: \(files.count) | Comments: \(comments.count)

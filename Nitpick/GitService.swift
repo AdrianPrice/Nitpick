@@ -58,6 +58,12 @@ actor GitService {
 
                 guard fm.fileExists(atPath: worktreePath) else { continue }
 
+                // Verify we can actually open this worktree (may fail under sandbox
+                // if the worktree is outside the security-scoped resource)
+                guard fm.isReadableFile(atPath: worktreePath) else { continue }
+                let worktreeURL = URL(fileURLWithPath: worktreePath)
+                guard (try? openRepo(at: worktreeURL)) != nil else { continue }
+
                 // Get branch from HEAD file
                 var branch = entry
                 let headFile = entryDir.appendingPathComponent("HEAD")

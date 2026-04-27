@@ -93,11 +93,15 @@ final class AppState {
             let worktrees = try await gitService.listWorktrees(repoPath: repo.path)
             repository?.worktrees = worktrees
 
-            // If current worktree was removed, switch to first available
-            if let current = selectedWorktree,
-               !worktrees.contains(where: { $0.path == current.path }) {
-                if let first = worktrees.first {
-                    selectWorktree(first)
+            if let current = selectedWorktree {
+                if let updated = worktrees.first(where: { $0.path == current.path }) {
+                    // Update selectedWorktree to the refreshed instance (e.g. branch name may have changed)
+                    selectedWorktree = updated
+                } else {
+                    // Current worktree was removed — switch to first available
+                    if let first = worktrees.first {
+                        selectWorktree(first)
+                    }
                 }
             }
         } catch {
@@ -132,6 +136,19 @@ final class AppState {
 
         // Refresh commit list so new commits appear in the picker
         await loadCommits()
+
+        // If the selected commit no longer exists (e.g. after amend/rebase),
+        // fall back to the matching new commit or working tree
+        if case .commit(let info) = diffTarget,
+           !recentCommits.contains(where: { $0.id == info.id }) {
+            // After amend, the new commit replaces the old one at the same position (HEAD).
+            // Select the first commit as the likely replacement, or fall back to working tree.
+            if let replacement = recentCommits.first {
+                diffTarget = .commit(replacement)
+            } else {
+                diffTarget = .workingTree
+            }
+        }
 
         do {
             let files: [DiffFile]

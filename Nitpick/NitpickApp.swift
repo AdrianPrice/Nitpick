@@ -29,9 +29,24 @@ struct NitpickApp: App {
 
 struct SettingsView: View {
     @AppStorage("promptPreamble") private var preamble = PromptPreamble.defaultText
+    @AppStorage("gitAuthorName") private var gitName = ""
+    @AppStorage("gitAuthorEmail") private var gitEmail = ""
 
     var body: some View {
         Form {
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Used for commit author/committer identity.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    TextField("Name", text: $gitName, prompt: Text("Your Name"))
+                    TextField("Email", text: $gitEmail, prompt: Text("you@example.com"))
+                }
+            } header: {
+                Text("Git Identity")
+            }
+
             Section {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("This text is prepended to every generated prompt.")
@@ -54,7 +69,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 500, height: 280)
+        .frame(width: 500, height: 380)
     }
 }
 

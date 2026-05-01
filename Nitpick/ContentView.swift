@@ -55,6 +55,9 @@ struct ContentView: View {
                 showClearAfterCopy = true
             }
         }
+        .sheet(isPresented: $state.showCommitSheet) {
+            CommitSheet(state: state)
+        }
         .onChange(of: colorScheme) {
             SyntaxHighlightingService.instance().updateAppearanceIfNeeded()
         }
@@ -271,6 +274,15 @@ struct ContentView: View {
             }
             .keyboardShortcut("r")
             .help("Refresh diffs (Cmd+R)")
+
+            if state.repository != nil && state.diffTarget.isWorkingTree {
+                Button {
+                    state.openCommitSheet()
+                } label: {
+                    Label("Select Files...", systemImage: "checklist")
+                }
+                .help("Choose specific files to commit")
+            }
         }
     }
 

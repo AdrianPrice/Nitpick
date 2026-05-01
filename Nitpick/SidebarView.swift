@@ -14,6 +14,11 @@ struct SidebarView: View {
             fileFilterField
             Divider()
             fileList
+
+            if state.repository != nil && state.diffTarget.isWorkingTree {
+                Divider()
+                commitSection
+            }
         }
         .frame(minWidth: 220)
     }
@@ -127,6 +132,117 @@ struct SidebarView: View {
                         : "No changes in this commit")
                 )
             }
+        }
+    }
+
+    // MARK: - Commit Section
+
+    @ViewBuilder
+    private var commitSection: some View {
+        VStack(spacing: 8) {
+            // Error banner
+            if let error = state.commitPushError {
+                HStack(spacing: 4) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .font(.caption2)
+                    Text(error)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                    Spacer(minLength: 0)
+                    Button {
+                        state.commitPushError = nil
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(6)
+                .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 4))
+            }
+
+            // Commit message field
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: $state.commitMessage)
+                    .font(.system(.caption, design: .monospaced))
+                    .scrollContentBackground(.hidden)
+                    .padding(4)
+
+                if state.commitMessage.isEmpty {
+                    Text("Commit message...")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 12)
+                        .allowsHitTesting(false)
+                }
+            }
+            .frame(height: 54)
+            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5)
+            )
+
+            // Buttons
+            HStack(spacing: 6) {
+                if state.hasUpstream {
+                    Button {
+                        Task { await state.performPush() }
+                    } label: {
+                        if state.isPushing {
+                            ProgressView()
+                                .controlSize(.mini)
+                        } else {
+                            Label("Push", systemImage: "arrow.up")
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(state.isPushing || state.isCommitting)
+                }
+
+                Spacer(minLength: 0)
+
+                // File count label
+                let count = state.diffFiles.count
+                if count > 0 {
+                    Text("\(count) file\(count == 1 ? "" : "s")")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                Button {
+                    state.selectedFilesForCommit = Set(state.diffFiles.map(\.path))
+                    Task { await state.performCommit() }
+                } label: {
+                    if state.isCommitting {
+                        ProgressView()
+                            .controlSize(.mini)
+                            .padding(.trailing, 2)
+                        Text("Committing...")
+                            .font(.caption)
+                    } else {
+                        Label("Commit", systemImage: "checkmark.circle.fill")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(
+                    state.isCommitting
+                    || state.diffFiles.isEmpty
+                    || state.commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                )
+                .keyboardShortcut(.return, modifiers: .command)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .task {
+            await state.refreshBranchInfo()
         }
     }
 }

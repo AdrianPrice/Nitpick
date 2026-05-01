@@ -10,11 +10,17 @@ actor GitService {
     enum GitError: Error, LocalizedError {
         case notAGitRepository
         case commandFailed(String)
+        case stagingFailed(String)
+        case commitFailed(String)
+        case pushFailed(String)
 
         var errorDescription: String? {
             switch self {
             case .notAGitRepository: return "Not a git repository"
             case .commandFailed(let msg): return "Git error: \(msg)"
+            case .stagingFailed(let msg): return "Staging failed: \(msg)"
+            case .commitFailed(let msg): return "Commit failed: \(msg)"
+            case .pushFailed(let msg): return "Push failed: \(msg)"
             }
         }
     }
@@ -151,6 +157,126 @@ actor GitService {
 
         let diff = try repo.diff(commit: commit)
         return convertDiff(diff)
+    }
+
+    // MARK: - Write Operations
+
+    /// Ensures the repo-local git config has user.name and user.email set.
+    /// This is needed because the App Sandbox prevents libgit2 from reading ~/.gitconfig.
+    func ensureIdentity(name: String, email: String, worktreePath: String) throws {
+        let url = URL(fileURLWithPath: worktreePath)
+
+        // Find the .git directory (could be a file for worktrees pointing elsewhere)
+        let gitPath = url.appendingPathComponent(".git")
+        let configURL: URL
+
+        let fm = FileManager.default
+        var isDir: ObjCBool = false
+        if fm.fileExists(atPath: gitPath.path, isDirectory: &isDir), isDir.boolValue {
+            configURL = gitPath.appendingPathComponent("config")
+        } else if fm.fileExists(atPath: gitPath.path) {
+            // .git is a file (worktree) — read the actual gitdir path
+            guard let content = try? String(contentsOf: gitPath, encoding: .utf8),
+                  content.hasPrefix("gitdir: ") else {
+                throw GitError.commandFailed("Cannot locate git config for worktree")
+            }
+            let gitdirPath = content.trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: "gitdir: ", with: "")
+            // For worktrees, write to the shared repo config (parent)
+            let gitdirURL = URL(fileURLWithPath: gitdirPath, relativeTo: url)
+            // Go up from .git/worktrees/<name> to .git/config
+            let repoGitDir = gitdirURL.deletingLastPathComponent().deletingLastPathComponent()
+            configURL = repoGitDir.appendingPathComponent("config")
+        } else {
+            throw GitError.commandFailed("No .git directory found")
+        }
+
+        // Read existing config
+        var config = (try? String(contentsOf: configURL, encoding: .utf8)) ?? ""
+
+        // Check if [user] section already has the values we need
+        if config.contains("name = \(name)") && config.contains("email = \(email)") {
+            return // Already configured
+        }
+
+        // Remove existing [user] section if present (we'll rewrite it)
+        if let userRange = config.range(of: #"\[user\][^\[]*"#, options: .regularExpression) {
+            config.removeSubrange(userRange)
+        }
+
+        // Append [user] section
+        let userSection = "\n[user]\n\tname = \(name)\n\temail = \(email)\n"
+        config.append(userSection)
+
+        try config.write(to: configURL, atomically: true, encoding: .utf8)
+    }
+
+    /// Stage specific files by their relative paths (one at a time for reliability).
+    func stageFiles(paths: [String], worktreePath: String) throws {
+        let url = URL(fileURLWithPath: worktreePath)
+        let repo = try openRepo(at: url)
+
+        for path in paths {
+            do {
+                try repo.add(path: path)
+            } catch {
+                throw GitError.stagingFailed("\(path): \(error.message)")
+            }
+        }
+    }
+
+    /// Create a commit with the current index (staged files).
+    @discardableResult
+    func commit(message: String, worktreePath: String) throws -> String {
+        let url = URL(fileURLWithPath: worktreePath)
+        let repo = try openRepo(at: url)
+
+        do {
+            let commit = try repo.commit(message: message)
+            return commit.id.hex
+        } catch {
+            throw GitError.commitFailed(error.message)
+        }
+    }
+
+    /// Push current branch to the remote.
+    func push(worktreePath: String) async throws {
+        let url = URL(fileURLWithPath: worktreePath)
+        let repo = try openRepo(at: url)
+
+        do {
+            try await repo.push()
+        } catch {
+            throw GitError.pushFailed(error.message)
+        }
+    }
+
+    /// Check whether the current branch has an upstream configured (i.e. push is possible).
+    /// Returns true if an upstream remote tracking branch exists.
+    func hasUpstream(worktreePath: String) throws -> Bool {
+        let url = URL(fileURLWithPath: worktreePath)
+        let repo = try openRepo(at: url)
+
+        do {
+            let current = try repo.branch.current
+            return (try? current.upstream) != nil
+        } catch {
+            return false
+        }
+    }
+
+    /// Returns the current branch name and whether it has an upstream configured.
+    func branchInfo(worktreePath: String) throws -> (name: String, hasUpstream: Bool) {
+        let url = URL(fileURLWithPath: worktreePath)
+        let repo = try openRepo(at: url)
+
+        do {
+            let current = try repo.branch.current
+            let hasUpstream = (try? current.upstream) != nil
+            return (name: current.name, hasUpstream: hasUpstream)
+        } catch {
+            return (name: "(detached)", hasUpstream: false)
+        }
     }
 
     // MARK: - Helpers

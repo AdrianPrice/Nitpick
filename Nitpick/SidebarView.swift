@@ -34,29 +34,53 @@ struct SidebarView: View {
                     .lineLimit(1)
 
                 if repo.worktrees.count > 1 {
-                    Picker("Worktree", selection: Binding(
-                        get: { state.selectedWorktree },
-                        set: { wt in
-                            if let wt { state.selectWorktree(wt) }
+                    HStack(spacing: 4) {
+                        Picker("Worktree", selection: Binding(
+                            get: { state.selectedWorktree },
+                            set: { wt in
+                                if let wt { state.selectWorktree(wt) }
+                            }
+                        )) {
+                            ForEach(repo.worktrees) { wt in
+                                Text(wt.displayName)
+                                    .tag(Optional(wt))
+                            }
                         }
-                    )) {
-                        ForEach(repo.worktrees) { wt in
-                            Text(wt.displayName)
-                                .tag(Optional(wt))
-                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+
+                        revealInFinderButton
                     }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
                 } else if let wt = state.selectedWorktree {
-                    Label(wt.displayName, systemImage: "arrow.triangle.branch")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 4) {
+                        Label(wt.displayName, systemImage: "arrow.triangle.branch")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+
+                        Spacer()
+
+                        revealInFinderButton
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
         }
+    }
+
+    private var revealInFinderButton: some View {
+        Button {
+            if let path = state.selectedWorktree?.path {
+                NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
+            }
+        } label: {
+            Image(systemName: "folder")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .help("Reveal in Finder")
     }
 
     // MARK: - Commit Picker

@@ -12,6 +12,8 @@ Nitpick bridges the gap between reading code and talking to AI. Instead of copyi
 
 It's built for solo developers who work with AI coding agents (Copilot, Claude, Cursor, etc.) and want a faster way to provide targeted feedback on code changes.
 
+![til](./assets/demo.gif)
+
 ## Features
 
 ### Review Diffs

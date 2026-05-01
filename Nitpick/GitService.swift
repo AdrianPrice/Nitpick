@@ -12,7 +12,6 @@ actor GitService {
         case commandFailed(String)
         case stagingFailed(String)
         case commitFailed(String)
-        case pushFailed(String)
 
         var errorDescription: String? {
             switch self {
@@ -20,7 +19,6 @@ actor GitService {
             case .commandFailed(let msg): return "Git error: \(msg)"
             case .stagingFailed(let msg): return "Staging failed: \(msg)"
             case .commitFailed(let msg): return "Commit failed: \(msg)"
-            case .pushFailed(let msg): return "Push failed: \(msg)"
             }
         }
     }
@@ -236,46 +234,6 @@ actor GitService {
             return commit.id.hex
         } catch {
             throw GitError.commitFailed(error.message)
-        }
-    }
-
-    /// Push current branch to the remote.
-    func push(worktreePath: String) async throws {
-        let url = URL(fileURLWithPath: worktreePath)
-        let repo = try openRepo(at: url)
-
-        do {
-            try await repo.push()
-        } catch {
-            throw GitError.pushFailed(error.message)
-        }
-    }
-
-    /// Check whether the current branch has an upstream configured (i.e. push is possible).
-    /// Returns true if an upstream remote tracking branch exists.
-    func hasUpstream(worktreePath: String) throws -> Bool {
-        let url = URL(fileURLWithPath: worktreePath)
-        let repo = try openRepo(at: url)
-
-        do {
-            let current = try repo.branch.current
-            return (try? current.upstream) != nil
-        } catch {
-            return false
-        }
-    }
-
-    /// Returns the current branch name and whether it has an upstream configured.
-    func branchInfo(worktreePath: String) throws -> (name: String, hasUpstream: Bool) {
-        let url = URL(fileURLWithPath: worktreePath)
-        let repo = try openRepo(at: url)
-
-        do {
-            let current = try repo.branch.current
-            let hasUpstream = (try? current.upstream) != nil
-            return (name: current.name, hasUpstream: hasUpstream)
-        } catch {
-            return (name: "(detached)", hasUpstream: false)
         }
     }
 

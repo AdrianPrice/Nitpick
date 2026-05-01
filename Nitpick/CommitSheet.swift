@@ -9,12 +9,7 @@ struct CommitSheet: View {
         VStack(spacing: 0) {
             header
             Divider()
-
-            if state.diffFiles.isEmpty && state.lastCommitSucceeded {
-                postCommitView
-            } else {
-                commitFormView
-            }
+            commitFormView
         }
         .frame(minWidth: 520, maxWidth: 520, minHeight: 400)
         .onAppear {
@@ -26,15 +21,8 @@ struct CommitSheet: View {
 
     private var header: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Commit & Push")
-                    .font(.headline)
-                if !state.currentBranchName.isEmpty {
-                    Label(state.currentBranchName, systemImage: "arrow.triangle.branch")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            }
+            Text("Commit")
+                .font(.headline)
 
             Spacer()
 
@@ -61,54 +49,6 @@ struct CommitSheet: View {
             // Actions
             actionBar
         }
-    }
-
-    // MARK: - Post-Commit View (shows push option)
-
-    private var postCommitView: some View {
-        VStack(spacing: 16) {
-            Spacer()
-
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 48))
-                .foregroundStyle(.green)
-
-            Text("Commit Successful")
-                .font(.title2.weight(.medium))
-
-            Text("All changes have been committed.")
-                .foregroundStyle(.secondary)
-
-            if state.hasUpstream {
-                Button {
-                    Task { await state.performPush() }
-                } label: {
-                    if state.isPushing {
-                        ProgressView()
-                            .controlSize(.small)
-                            .padding(.trailing, 4)
-                        Text("Pushing...")
-                    } else {
-                        Label("Push to Remote", systemImage: "arrow.up.circle")
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(state.isPushing)
-                .controlSize(.large)
-            } else {
-                Text("No upstream branch configured. Push manually to set up tracking.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-
-            if let error = state.commitPushError {
-                errorBanner(error)
-            }
-
-            Spacer()
-        }
-        .padding()
     }
 
     // MARK: - File Selection
@@ -240,7 +180,7 @@ struct CommitSheet: View {
 
     private var actionBar: some View {
         VStack(spacing: 8) {
-            if let error = state.commitPushError {
+            if let error = state.commitError {
                 errorBanner(error)
             }
 
@@ -251,23 +191,6 @@ struct CommitSheet: View {
                     .foregroundStyle(.secondary)
 
                 Spacer()
-
-                if state.hasUpstream {
-                    Button {
-                        Task { await state.performPush() }
-                    } label: {
-                        if state.isPushing {
-                            ProgressView()
-                                .controlSize(.mini)
-                                .padding(.trailing, 2)
-                            Text("Pushing...")
-                        } else {
-                            Label("Push", systemImage: "arrow.up")
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(state.isPushing || state.isCommitting)
-                }
 
                 Button {
                     Task { await state.performCommit() }
@@ -306,7 +229,7 @@ struct CommitSheet: View {
                 .foregroundStyle(.secondary)
             Spacer()
             Button {
-                state.commitPushError = nil
+                state.commitError = nil
             } label: {
                 Image(systemName: "xmark.circle.fill")
                     .foregroundStyle(.secondary)

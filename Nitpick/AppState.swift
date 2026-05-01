@@ -25,16 +25,12 @@ final class AppState {
     var reviewedFileHashes: [String: Int] = [:]  // fileId -> diff content hash at review time
     var navigatedCommentId: UUID?  // set by next/previousComment, observed by diff views
 
-    // Commit & Push
+    // Commit
     var showCommitSheet = false
     var commitMessage = ""
     var selectedFilesForCommit: Set<String> = []  // file paths to stage
     var isCommitting = false
-    var isPushing = false
-    var commitPushError: String?
-    var currentBranchName: String = ""
-    var hasUpstream: Bool = false
-    var lastCommitSucceeded = false  // transient flag to show push after commit
+    var commitError: String?
 
     // Computed
     var filteredFiles: [DiffFile] {
@@ -129,7 +125,6 @@ final class AppState {
         Task {
             await loadCommits()
             await refreshDiff()
-            await refreshBranchInfo()
         }
     }
 
@@ -345,42 +340,25 @@ final class AppState {
         saveComments()
     }
 
-    // MARK: - Commit & Push
+    // MARK: - Commit
 
     func openCommitSheet() {
         guard diffTarget.isWorkingTree else { return }
-        // Pre-select all changed files
         selectedFilesForCommit = Set(diffFiles.map(\.path))
         commitMessage = ""
-        commitPushError = nil
-        lastCommitSucceeded = false
+        commitError = nil
         showCommitSheet = true
-
-        // Refresh branch info
-        Task { await refreshBranchInfo() }
-    }
-
-    func refreshBranchInfo() async {
-        guard let worktree = selectedWorktree else { return }
-        do {
-            let info = try await gitService.branchInfo(worktreePath: worktree.path)
-            currentBranchName = info.name
-            hasUpstream = info.hasUpstream
-        } catch {
-            currentBranchName = ""
-            hasUpstream = false
-        }
     }
 
     func performCommit() async {
         guard let worktree = selectedWorktree else { return }
         let paths = Array(selectedFilesForCommit)
         guard !paths.isEmpty else {
-            commitPushError = "No files selected"
+            commitError = "No files selected"
             return
         }
         guard !commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            commitPushError = "Commit message cannot be empty"
+            commitError = "Commit message cannot be empty"
             return
         }
 
@@ -388,12 +366,12 @@ final class AppState {
         let gitName = UserDefaults.standard.string(forKey: "gitAuthorName") ?? ""
         let gitEmail = UserDefaults.standard.string(forKey: "gitAuthorEmail") ?? ""
         guard !gitName.isEmpty, !gitEmail.isEmpty else {
-            commitPushError = "Set your Git name and email in Settings (Cmd+,)"
+            commitError = "Set your Git name and email in Settings (Cmd+,)"
             return
         }
 
         isCommitting = true
-        commitPushError = nil
+        commitError = nil
         defer { isCommitting = false }
 
         do {
@@ -401,29 +379,13 @@ final class AppState {
             try await gitService.ensureIdentity(name: gitName, email: gitEmail, worktreePath: worktree.path)
             try await gitService.stageFiles(paths: paths, worktreePath: worktree.path)
             try await gitService.commit(message: commitMessage, worktreePath: worktree.path)
-            lastCommitSucceeded = true
             commitMessage = ""
             selectedFilesForCommit.removeAll()
 
             // Refresh diff to reflect the commit
             await refreshDiff()
         } catch {
-            commitPushError = error.localizedDescription
-        }
-    }
-
-    func performPush() async {
-        guard let worktree = selectedWorktree else { return }
-
-        isPushing = true
-        commitPushError = nil
-        defer { isPushing = false }
-
-        do {
-            try await gitService.push(worktreePath: worktree.path)
-            lastCommitSucceeded = false  // Reset after successful push
-        } catch {
-            commitPushError = error.localizedDescription
+            commitError = error.localizedDescription
         }
     }
 

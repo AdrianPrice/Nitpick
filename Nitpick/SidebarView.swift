@@ -141,7 +141,7 @@ struct SidebarView: View {
     private var commitSection: some View {
         VStack(spacing: 8) {
             // Error banner
-            if let error = state.commitPushError {
+            if let error = state.commitError {
                 HStack(spacing: 4) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
@@ -152,7 +152,7 @@ struct SidebarView: View {
                         .lineLimit(2)
                     Spacer(minLength: 0)
                     Button {
-                        state.commitPushError = nil
+                        state.commitError = nil
                     } label: {
                         Image(systemName: "xmark")
                             .font(.caption2)
@@ -189,22 +189,6 @@ struct SidebarView: View {
 
             // Buttons
             HStack(spacing: 6) {
-                if state.hasUpstream {
-                    Button {
-                        Task { await state.performPush() }
-                    } label: {
-                        if state.isPushing {
-                            ProgressView()
-                                .controlSize(.mini)
-                        } else {
-                            Label("Push", systemImage: "arrow.up")
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(state.isPushing || state.isCommitting)
-                }
-
                 Spacer(minLength: 0)
 
                 // File count label
@@ -241,9 +225,6 @@ struct SidebarView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .task {
-            await state.refreshBranchInfo()
-        }
     }
 }
 
